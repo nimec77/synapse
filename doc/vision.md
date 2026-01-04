@@ -6,12 +6,22 @@
 - **Rust** (nightly)
 - Edition: 2024
 
+### Design Decision: Custom LLM Provider Implementation
+
+Rather than using existing libraries (rig, genai, async-openai), the LLM provider layer will be built from scratch. This decision prioritizes:
+
+1. **Deep learning** - Hands-on experience with async HTTP, SSE streaming, trait design
+2. **Full control** - Custom retry logic, caching, error handling tailored to Synapse
+3. **Minimal dependencies** - No heavy framework overhead
+4. **MCP integration** - Seamless integration with rmcp without adapter layers
+
 ### Core Dependencies
 
 | Category | Crate | Purpose |
 |----------|-------|---------|
 | Async Runtime | `tokio` | Async execution, I/O, timers |
 | HTTP Client | `reqwest` | LLM API requests with streaming |
+| SSE Parsing | `eventsource-stream` | Server-Sent Events stream parsing |
 | Serialization | `serde`, `serde_json` | JSON parsing for API responses |
 | Configuration | `toml`, `serde` | TOML config file parsing |
 | CLI Framework | `clap` | Command-line argument parsing |
@@ -22,6 +32,7 @@
 | Telegram | `teloxide` | Telegram bot interface |
 | MCP | `rmcp` | Model Context Protocol support |
 | Testing | `tokio-test`, `mockall` | Async testing and mocking |
+| Async Utilities | `futures`, `async-stream` | Stream combinators, async generators |
 
 ### Development Tools
 - **cargo-watch**: Auto-rebuild on file changes
@@ -46,12 +57,12 @@
                             │               │                    │
                             ▼               ▼                    ▼
                     ┌─────────────────────────────────────────────────────────┐
-                    │                 Application Layer                        │
+                    │                 Application Layer                       │
                     │  ┌─────────────────────────────────────────────────┐    │
-                    │  │              Agent Orchestrator                  │    │
-                    │  │  - Session management                            │    │
-                    │  │  - Message routing                               │    │
-                    │  │  - MCP tool coordination                         │    │
+                    │  │              Agent Orchestrator                 │    │
+                    │  │  - Session management                           │    │
+                    │  │  - Message routing                              │    │
+                    │  │  - MCP tool coordination                        │    │
                     │  └─────────────────────────────────────────────────┘    │
                     └─────────────────────────────────────────────────────────┘
                                               │
@@ -102,18 +113,18 @@ synapse/
 │       ├── message.rs         # Message types
 │       ├── session.rs         # Session management
 │       │
-│       ├── provider/          # LLM provider abstraction
-│       │   ├── mod.rs         # Provider trait
+│       ├── provider.rs        # Provider trait + module declarations
+│       ├── provider/          # LLM provider implementations
 │       │   ├── anthropic.rs   # Claude implementation
 │       │   ├── openai.rs      # OpenAI implementation
 │       │   └── streaming.rs   # Streaming response handling
 │       │
-│       ├── storage/           # Persistence layer
-│       │   ├── mod.rs         # Storage trait
+│       ├── storage.rs         # Storage trait + module declarations
+│       ├── storage/           # Persistence implementations
 │       │   └── database.rs    # sqlx database implementation
 │       │
-│       └── mcp/               # MCP integration
-│           ├── mod.rs         # MCP client
+│       ├── mcp.rs             # MCP client + module declarations
+│       └── mcp/               # MCP components
 │           ├── protocol.rs    # Protocol types
 │           └── tools.rs       # Tool execution
 │
@@ -150,30 +161,30 @@ synapse/
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                              synapse-core                                │
-│                                                                          │
+│                              synapse-core                               │
+│                                                                         │
 │  ┌──────────────────┐    ┌──────────────────┐    ┌──────────────────┐   │
 │  │      Agent       │───▶│  SessionManager  │───▶│   SessionStore   │   │
 │  │   Orchestrator   │    │                  │    │     (trait)      │   │
 │  └────────┬─────────┘    └──────────────────┘    └──────────────────┘   │
-│           │                                                │             │
-│           │              ┌──────────────────┐              ▼             │
+│           │                                                │            │
+│           │              ┌──────────────────┐              ▼            │
 │           ├─────────────▶│    McpClient     │    ┌──────────────────┐   │
 │           │              │                  │    │  SqliteStore     │   │
 │           │              └──────────────────┘    │  (impl)          │   │
 │           │                       │              └──────────────────┘   │
-│           ▼                       ▼                                      │
+│           ▼                       ▼                                     │
 │  ┌──────────────────┐    ┌──────────────────┐                           │
 │  │   LlmProvider    │    │   ToolRegistry   │                           │
 │  │     (trait)      │    │                  │                           │
 │  └────────┬─────────┘    └──────────────────┘                           │
-│           │                                                              │
-│     ┌─────┴─────┐                                                        │
-│     ▼           ▼                                                        │
-│ ┌────────┐ ┌────────┐                                                    │
-│ │Anthropic│ │ OpenAI │                                                   │
-│ └────────┘ └────────┘                                                    │
-└─────────────────────────────────────────────────────────────────────────┘
+│           │                                                             │
+│     ┌─────┴─────┐                                                       │
+│     ▼           ▼                                                       │
+│ ┌────────┐ ┌────────┐                                                   │
+│ │Anthropic│ │ OpenAI │                                                  │
+│ └────────┘ └────────┘                                                   │
+└──────────────────────────────────────────────────────────────────────── ┘
 ```
 
 ### Data Flow
@@ -218,12 +229,18 @@ synapse/
 ┌─────────────────────┐       ┌─────────────────────┐
 │   Configuration     │       │    McpServer        │
 ├─────────────────────┤       ├─────────────────────┤
-│ default_provider    │       │ name: String        │
-│ providers: Map      │       │ command: String     │
-│ system_prompt       │       │ args: Vec<String>   │
-│ mcp_servers: Vec    │       │ env: Map            │
-│ session_db_path     │       │ enabled: bool       │
+│ default_provider    │       │ command: String     │
+│ providers: Map      │       │ args: Vec<String>   │
+│ system_prompt       │       │ env: Map<String,    │
+│ session_db_path     │       │      String>        │
 └─────────────────────┘       └─────────────────────┘
+
+┌─────────────────────┐
+│   McpConfig         │
+├─────────────────────┤
+│ mcpServers: Map<    │
+│   String,McpServer> │
+└─────────────────────┘
 ```
 
 ### Role Enum
@@ -266,7 +283,38 @@ CREATE INDEX idx_sessions_updated ON sessions(updated_at);
 ### Storage Strategy
 - **Sessions**: Database (SQLite default at `~/.config/synapse/sessions.db`, configurable to PostgreSQL/MySQL)
 - **Configuration**: TOML file at `~/.config/synapse/config.toml`
+- **MCP Servers**: JSON file at `~/.config/synapse/mcp_servers.json` (standard format compatible with Claude Desktop, Windsurf, etc.)
 - **Environment override**: `SYNAPSE_CONFIG` env var for custom path
+
+### MCP Server Configuration Format
+
+```json
+{
+  "mcpServers": {
+    "figma-remote-mcp-server": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://mcp.figma.com/mcp"
+      ],
+      "env": {}
+    },
+    "dart-mcp-server": {
+      "command": "dart",
+      "args": ["mcp-server", "--force-roots-fallback"],
+      "env": {}
+    },
+    "telegram": {
+      "command": "/Applications/telegram-mcp",
+      "args": [],
+      "env": {}
+    }
+  }
+}
+```
+
+This format is compatible with other MCP-enabled agents, allowing users to share configurations.
 
 ---
 
@@ -458,6 +506,7 @@ cargo build --release
 | Variable | Purpose | Default |
 |----------|---------|---------|
 | `SYNAPSE_CONFIG` | Config file path | Platform default |
+| `SYNAPSE_MCP_CONFIG` | MCP servers JSON file path | `~/.config/synapse/mcp_servers.json` |
 | `SYNAPSE_LOG` | Log level | `info` |
 | `DATABASE_URL` | Database connection string | `sqlite:~/.config/synapse/sessions.db` |
 | `ANTHROPIC_API_KEY` | Claude API key | From config |

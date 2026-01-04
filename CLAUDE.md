@@ -55,13 +55,35 @@ cargo fmt
 cargo clippy
 ```
 
+## Code Conventions
+
+### Module System
+Use the **new Rust module system** (Rust 2018+). Do NOT use `mod.rs` files.
+
+```
+# Correct (new style)
+src/
+├── provider.rs        # declares: mod anthropic; mod openai;
+└── provider/
+    ├── anthropic.rs
+    └── openai.rs
+
+# Incorrect (old style) - DO NOT USE
+src/
+└── provider/
+    ├── mod.rs         # ❌ Never use mod.rs
+    ├── anthropic.rs
+    └── openai.rs
+```
+
 ## Key Technology Decisions
 
 - **Rust**: Nightly, Edition 2024
+- **LLM Providers**: Custom implementation (no rig/genai/async-openai) for learning depth
 - **Async Runtime**: Tokio
 - **Error Handling**: `thiserror` for library errors, `anyhow` for application errors
 - **Session Storage**: SQLite via `sqlx` (supports switching to PostgreSQL/MySQL)
-- **Streaming**: SSE streaming for LLM responses
+- **Streaming**: SSE streaming via `eventsource-stream` + `async-stream`
 - **MCP**: Model Context Protocol support via `rmcp`
 - **CLI**: `clap` for args, `ratatui` for REPL UI
 
