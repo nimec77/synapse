@@ -55,6 +55,26 @@ cargo fmt
 cargo clippy
 ```
 
+## Key Technology Decisions
+
+- **Rust**: Nightly, Edition 2024
+- **Async Runtime**: Tokio
+- **Error Handling**: `thiserror` for library errors, `anyhow` for application errors
+- **Session Storage**: SQLite via `sqlx` (supports switching to PostgreSQL/MySQL)
+- **Streaming**: SSE streaming for LLM responses
+- **MCP**: Model Context Protocol support via `rmcp`
+- **CLI**: `clap` for args, `ratatui` for REPL UI
+
+## Workspace Crates
+
+| Crate | Purpose |
+|-------|---------|
+| `synapse-core` | Core library: agent, providers, storage, MCP |
+| `synapse-cli` | CLI binary: REPL and one-shot modes |
+| `synapse-telegram` | Telegram bot interface |
+
 ## Project Status
 
-This project is in early development. See `doc/idea.md` for the full project specification and goals.
+This project is in early development. See:
+- `doc/idea.md` - Project concept and goals
+- `doc/vision.md` - Technical architecture and design decisions
