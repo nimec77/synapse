@@ -97,6 +97,32 @@ src/
 
 ## Project Status
 
-This project is in early development. See:
-- `doc/idea.md` - Project concept and goals
-- `doc/vision.md` - Technical architecture and design decisions
+This project is in early development.
+
+## Documentation
+
+| Document | Purpose |
+|----------|---------|
+| `doc/idea.md` | Project concept and goals |
+| `doc/vision.md` | Technical architecture and design decisions |
+| `doc/conventions.md` | Code rules: DO and DON'T |
+| `doc/tasklist.md` | Development plan with progress tracking |
+| `doc/workflow.md` | Step-by-step collaboration process |
+
+## Workflow
+
+**Before starting any task**, read these in order:
+1. `doc/tasklist.md` — find current phase and next task
+2. `doc/vision.md` — understand relevant architecture
+3. `doc/conventions.md` — rules to follow
+
+**Follow `doc/workflow.md` strictly:**
+1. **Propose** solution with code snippets → wait for approval
+2. **Implement** → verify with `cargo check/test/clippy`
+3. **Commit** → update `tasklist.md` → wait for confirmation
+4. **Next task** → ask before proceeding
+
+**Three mandatory checkpoints — never skip:**
+- "Proceed with this approach?"
+- "Ready to commit?"
+- "Continue to next task?"
