@@ -1,125 +1,119 @@
 # Development Conventions
 
-Concise rules for Synapse development. Keep it simple.
+Rules for code generation. Reference [vision.md](vision.md) for architecture, structure, and technical decisions.
 
 ---
 
 ## Code Style
 
-- **Formatter**: `cargo fmt` (rustfmt) - run before every commit
-- **Line length**: 100 characters max
-- **Naming**:
-  - `snake_case`: functions, variables, modules
-  - `PascalCase`: types, traits, enums
-  - `SCREAMING_SNAKE_CASE`: constants
-- **Imports**: Group in order: `std` → external crates → internal modules, separated by blank lines
-- **Module system**: New style only (no `mod.rs` files)
-- **Comments**: Explain *why*, not *what*. Code should be self-documenting.
+**DO:**
+- Run `cargo fmt` before committing
+- Use 100 character line limit
+- Group imports: `std` → external → internal (blank lines between)
+- Write doc comments (`///`) for all `pub` items
+- Explain *why* in comments, not *what*
+
+**DON'T:**
+- Use `mod.rs` files (use new module system per vision.md §3)
+- Add comments that restate the code
 
 ---
 
-## Architecture Adherence
+## Architecture
 
-- **Hexagonal architecture**: Core depends on traits (ports), not implementations (adapters)
-- **Dependency flow**: `interfaces → core → traits ← adapters`
-- **Dependency injection**: Pass trait objects or generics, never construct adapters inside core
-- **Module communication**: Via public trait methods only, no internal struct access
-- **Forbidden patterns**:
-  - No `unwrap()` or `expect()` in library code (use `?` operator)
-  - No `mod.rs` files
-  - No direct HTTP calls in core (use `LlmProvider` trait)
-  - No blocking I/O in async contexts
+**DO:**
+- Follow hexagonal architecture (vision.md §2)
+- Core depends on traits (ports), adapters implement them
+- Pass dependencies via generics or trait objects
+- Keep `synapse-core` independent of interfaces
 
----
-
-## Testing Requirements
-
-- **Unit test targets**: Config parsing, message serialization, session logic, error conversions
-- **Mock strategy**: Use `mockall` for trait mocking; create `MockProvider` for LLM tests
-- **Coverage threshold**: 80% minimum for `synapse-core`
-- **Test naming**: `test_<function_name>_<scenario>` (e.g., `test_parse_config_missing_api_key`)
-- **Test location**: Unit tests in same file (`#[cfg(test)]`), integration tests in `tests/`
-
----
-
-## Dependency Management
-
-- **Version format**: Caret `^x.y.z` (SemVer-compatible updates)
-- **Updates**: Run `cargo update` weekly; review changelogs for minor versions
-- **Security**: Run `cargo audit` before releases and in CI
-- **Deprecated crates**: Replace within 2 weeks of deprecation notice
-- **New dependencies**: Prefer well-maintained crates with >100 GitHub stars
-
----
-
-## Documentation
-
-- **Doc comments**: Required for all `pub` items (`///` with description)
-- **Module docs**: Each module file starts with `//!` describing purpose
-- **API format**: Include example in doc comment for complex functions
-- **ADRs**: Document major decisions in `doc/adr/NNN-title.md` (when needed)
-- **README**: Keep `README.md` updated with build/run instructions
-
----
-
-## Performance & Security
-
-- **Performance targets**:
-  - First token streaming: < 500ms
-  - Session load: < 50ms
-  - Config load: < 10ms
-- **Security rules**:
-  - Never log API keys, tokens, or user message content at INFO or above
-  - Config files must be `chmod 600` (warn if not)
-  - HTTPS only for all external APIs
-  - Validate all user input at system boundaries
-- **Logging levels**: Use `tracing` macros; secrets only at TRACE level in dev
+**DON'T:**
+- Import adapters into core code
+- Make HTTP calls outside provider implementations
+- Access struct internals across module boundaries
 
 ---
 
 ## Error Handling
 
-- **Library errors**: `thiserror` with typed enums in `synapse-core`
-- **Application errors**: `anyhow` in CLI/Telegram for ergonomic error chains
-- **User-facing messages**: Clear, actionable (e.g., "API key not found. Set ANTHROPIC_API_KEY or add to config.toml")
-- **Internal logging**: Log errors with context (session ID, provider, operation)
-- **Recovery**: Implement retry with exponential backoff for transient network errors
+**DO:**
+- Use `thiserror` in `synapse-core` (typed errors)
+- Use `anyhow` in CLI/Telegram (ergonomic chains)
+- Propagate errors with `?` operator
+- Write user-facing messages that are actionable
+
+**DON'T:**
+- Use `unwrap()` or `expect()` in library code
+- Panic on recoverable errors
+- Expose internal error details to users
 
 ---
 
-## Git & Version Control
+## Async & Safety
 
-- **Commit format**:
-  ```
-  <type>: <short description>
+**DO:**
+- Use `tokio` runtime for all async code
+- Implement retry with backoff for network errors
+- Validate input at system boundaries
 
-  <optional body>
-  ```
-  Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`
-
-- **Branch naming**:
-  - Features: `feature/<name>`
-  - Fixes: `fix/<issue-or-description>`
-  - Main branch: `master`
-
-- **PR checklist**:
-  - [ ] `cargo fmt --check` passes
-  - [ ] `cargo clippy -- -D warnings` passes
-  - [ ] `cargo test` passes
-  - [ ] New public items have doc comments
-  - [ ] No `unwrap()` in library code
-
-- **Merge strategy**: Squash merge to keep history clean
+**DON'T:**
+- Block the async runtime (no `std::thread::sleep`, use `tokio::time::sleep`)
+- Use `unsafe` without justification and documentation
+- Store secrets in memory longer than necessary
 
 ---
 
-## Pre-commit Checklist
+## Testing
 
+**DO:**
+- Write unit tests for parsing, serialization, logic
+- Use `mockall` for trait mocking
+- Name tests: `test_<function>_<scenario>`
+- Target 80% coverage for `synapse-core`
+
+**DON'T:**
+- Test implementation details, test behavior
+- Skip tests for error paths
+- Use real API calls in unit tests
+
+---
+
+## Security
+
+**DO:**
+- Log at appropriate levels per vision.md §10
+- Require `chmod 600` for config files
+- Use HTTPS exclusively for external APIs
+
+**DON'T:**
+- Log API keys, tokens, or credentials at any level
+- Log user message content above DEBUG
+- Commit secrets or `.env` files
+
+---
+
+## Git Workflow
+
+Follow vision.md §12 for commit format, branch naming, and pre-commit checks.
+
+**Pre-commit (required):**
 ```bash
-cargo fmt --check
-cargo clippy -- -D warnings
-cargo test
-cargo audit
+cargo fmt --check && cargo clippy -- -D warnings && cargo test
 ```
 
-All must pass before pushing.
+**DON'T:**
+- Commit code that fails clippy
+- Skip the pre-commit checks
+- Force push to `master`
+
+---
+
+## Absolute Prohibitions
+
+1. **No `mod.rs`** — use `module.rs` + `module/` directory pattern
+2. **No `unwrap()`/`expect()`** in `synapse-core`
+3. **No blocking I/O** in async functions
+4. **No secrets in logs** at any level
+5. **No direct dependencies** from core to adapters
+6. **No code duplication** — extract to shared functions
+7. **No silent failures** — always handle or propagate errors
