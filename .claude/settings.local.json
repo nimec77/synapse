@@ -6,7 +6,8 @@
       "Bash(git config:*)",
       "mcp__Ref__ref_search_documentation",
       "mcp__Ref__ref_read_url",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Skill(researcher)"
     ]
   }
 }
