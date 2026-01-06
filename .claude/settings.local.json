@@ -5,7 +5,8 @@
       "Bash(git init:*)",
       "Bash(git config:*)",
       "mcp__Ref__ref_search_documentation",
-      "mcp__Ref__ref_read_url"
+      "mcp__Ref__ref_read_url",
+      "Bash(git commit:*)"
     ]
   }
 }
