@@ -103,32 +103,33 @@ This project is in early development.
 
 | Document | Purpose |
 |----------|---------|
-| `doc/idea.md` | Project concept and goals |
-| `doc/vision.md` | Technical architecture and design decisions |
-| `doc/conventions.md` | Code rules: DO and DON'T |
-| `doc/tasklist.md` | Development plan with progress tracking |
-| `doc/workflow.md` | Step-by-step collaboration process |
-| `doc/phase-*.md` | Phase-specific task breakdowns |
-| `doc/prd/` | PRD documents for each ticket (e.g., `SY-1.prd.md`) |
-| `doc/prd.template.md` | Template for creating new PRDs |
-| `doc/.active_ticket` | Current active ticket identifier |
+| `docs/idea.md` | Project concept and goals |
+| `docs/vision.md` | Technical architecture and design decisions |
+| `docs/conventions.md` | Code rules: DO and DON'T |
+| `docs/tasklist.md` | Development plan with progress tracking |
+| `docs/workflow.md` | Step-by-step collaboration process |
+| `docs/phase-*.md` | Phase-specific task breakdowns |
+| `docs/prd/` | PRD documents for each ticket (e.g., `SY-1.prd.md`) |
+| `docs/prd.template.md` | Template for creating new PRDs |
+| `docs/research/` | Research documents for each ticket |
+| `docs/.active_ticket` | Current active ticket identifier |
 
 ## Workflow
 
 **Starting a new feature:**
 ```
-/idea SY-<N> "Title" @doc/phase-<N>.md
+/idea SY-<N> "Title" @docs/phase-<N>.md
 ```
-This creates a PRD in `doc/prd/SY-<N>.prd.md` and sets `doc/.active_ticket`.
+This creates a PRD in `docs/prd/SY-<N>.prd.md` and sets `docs/.active_ticket`.
 
 **Before starting any task**, read these in order:
-1. `doc/.active_ticket` — current ticket being worked on
-2. `doc/prd/<ticket>.prd.md` — PRD for the current feature
-3. `doc/tasklist.md` — find current phase and next task
-4. `doc/vision.md` — understand relevant architecture
-5. `doc/conventions.md` — rules to follow
+1. `docs/.active_ticket` — current ticket being worked on
+2. `docs/prd/<ticket>.prd.md` — PRD for the current feature
+3. `docs/tasklist.md` — find current phase and next task
+4. `docs/vision.md` — understand relevant architecture
+5. `docs/conventions.md` — rules to follow
 
-**Follow `doc/workflow.md` strictly:**
+**Follow `docs/workflow.md` strictly:**
 1. **Propose** solution with code snippets → wait for approval
 2. **Implement** → verify with `cargo check/test/clippy`
 3. **Commit** → update `tasklist.md` → wait for confirmation
