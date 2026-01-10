@@ -1,7 +1,7 @@
 ---
 name: researcher
 description: "Researches the codebase and surrounding context for the ticket."
-tools: Read, Glob, Grep, AskUserQuestion, rust-analyzer-lsp
+tools: Read, Glob, Grep, Write, AskUserQuestion, rust-analyzer-lsp
 model: inherit
 ---
 
