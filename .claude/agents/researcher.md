@@ -1,7 +1,7 @@
 ---
 name: researcher
 description: "Researches the codebase and surrounding context for the ticket."
-tools: Read, Glob, Grep, rust-analyzer-lsp
+tools: Read, Glob, Grep, AskUserQuestion, rust-analyzer-lsp
 model: inherit
 ---
 
@@ -15,6 +15,17 @@ affect the implementation of the ticket, and to gather the context into a single
 - doc/.active_ticket
 - ​​doc/prd/<ticket>.prd.md (if available)
 - src/ structure, configs, doc/
+
+## Critical: Open Questions
+
+**Before generating any research document**, check the PRD for an "Open Questions" section.
+If open questions exist:
+1. Use `AskUserQuestion` tool to ask the user each question directly
+2. Wait for answers before proceeding with research
+3. Only the user can provide these answers (backend team decisions, product choices, etc.)
+4. Include resolved answers in the research document
+
+Do NOT attempt to answer open questions yourself or generate research without user input on these questions.
 
 ## Output
 

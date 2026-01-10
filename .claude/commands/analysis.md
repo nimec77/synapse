@@ -10,8 +10,8 @@ Use the `analyst` subagent.
 You are starting the process of working on a feature with the identifier `$1`.
 
 Steps:
-1. Update `doc/.active_ticket` with the value `$1`.
-2. If the file `doc/prd/$1.prd.md` does not exist, create it from the template `@doc/prd.template.md`.
+1. Update `docs/.active_ticket` with the value `$1`.
+2. If the file `docs/prd/$1.prd.md` does not exist, create it from the template `@docs/prd.template.md`.
 3. Transfer `$ARGUMENTS` to the "Context / Idea" section.
 4. If a third argument (description file path) is provided, read the file and incorporate its content into the PRD as additional context in the "Context / Idea" section.
 5. Create the following sections: goals, user stories, scenarios, metrics, constraints, risks, open questions.
