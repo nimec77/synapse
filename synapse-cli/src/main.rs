@@ -4,6 +4,8 @@ use std::io::{self, IsTerminal, Read};
 
 use clap::Parser;
 
+use synapse_core::Config;
+
 /// Synapse CLI - AI agent command-line interface
 #[derive(Parser)]
 #[command(name = "synapse")]
@@ -15,9 +17,13 @@ struct Args {
 
 fn main() {
     let args = Args::parse();
+    let config = Config::load().unwrap_or_default();
 
     match get_message(&args) {
-        Ok(message) => println!("{}", format_echo(&message)),
+        Ok(message) => {
+            println!("Provider: {}", config.provider);
+            println!("{}", format_echo(&message));
+        }
         Err(_) => {
             // No input provided, show help
             Args::parse_from(["synapse", "--help"]);

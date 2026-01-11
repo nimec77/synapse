@@ -4,4 +4,7 @@ version = "0.1.0"
 edition.workspace = true
 
 [dependencies]
-# No dependencies for Phase 1
+dirs = "5"
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+toml = "0.8"
