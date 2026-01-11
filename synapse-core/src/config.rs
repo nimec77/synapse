@@ -31,7 +31,7 @@ pub enum ConfigError {
 }
 
 /// Application configuration loaded from TOML file.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Config {
     /// LLM provider name (e.g., "deepseek", "anthropic", "openai").
     #[serde(default = "default_provider")]
@@ -176,5 +176,41 @@ model = "gpt-4"
         assert_eq!(config.provider, "deepseek");
         assert_eq!(config.api_key, None);
         assert_eq!(config.model, "deepseek-chat");
+    }
+
+    #[test]
+    fn test_load_from_path() {
+        use std::io::Write;
+        let dir = std::env::temp_dir();
+        let path = dir.join("synapse_test_config.toml");
+        let mut file = std::fs::File::create(&path).unwrap();
+        writeln!(file, r#"provider = "test-provider""#).unwrap();
+        drop(file);
+
+        let config = Config::load_from(&path).unwrap();
+        assert_eq!(config.provider, "test-provider");
+
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn test_parse_invalid_toml() {
+        use std::io::Write;
+        let dir = std::env::temp_dir();
+        let path = dir.join("synapse_invalid_config.toml");
+        let mut file = std::fs::File::create(&path).unwrap();
+        writeln!(file, r#"invalid = ["#).unwrap();
+        drop(file);
+
+        let result = Config::load_from(&path);
+        assert!(matches!(result, Err(ConfigError::ParseError { .. })));
+
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn test_load_from_nonexistent_file() {
+        let result = Config::load_from("/nonexistent/path/config.toml");
+        assert!(matches!(result, Err(ConfigError::IoError { .. })));
     }
 }

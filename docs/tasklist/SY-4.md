@@ -1,6 +1,6 @@
 # Tasklist: SY-4 - Configuration System
 
-Status: IMPLEMENTATION_COMPLETE
+Status: REVIEW_COMPLETE
 
 ## Context
 
@@ -179,6 +179,37 @@ Run all quality checks and verify acceptance criteria from PRD.
 
 ---
 
+## Code Review Fixes
+
+- [x] **Task 12: Add missing unit tests for error paths**
+  - Add `test_load_from_path` test that creates a temp file, writes valid TOML, and verifies `Config::load_from()` loads it correctly
+  - Add `test_parse_invalid_toml` test that verifies `ConfigError::ParseError` is returned for malformed TOML (e.g., `"invalid = ["`)
+  - Add `test_load_from_nonexistent_file` test that verifies `ConfigError::IoError` is returned for missing files
+  - Acceptance criteria:
+    - All three tests exist in `synapse-core/src/config.rs`
+    - Tests verify both error variants are correctly constructed with file paths
+    - `cargo test -p synapse-core` passes
+
+- [x] **Task 13: Add config.toml to .gitignore**
+  - Add `config.toml` to `.gitignore` to prevent accidental commit of API keys
+  - Acceptance criteria:
+    - `/config.toml` is listed in `.gitignore`
+    - Running `git status` does not show `config.toml` as untracked (if it exists locally)
+
+- [x] **Task 14: Add PartialEq derive to Config struct**
+  - Add `PartialEq` to the derive macro on `Config` struct for easier testing and comparison
+  - Acceptance criteria:
+    - `Config` struct derives `PartialEq`
+    - `cargo check -p synapse-core` succeeds
+
+- [x] **Task 15: Final verification after review fixes**
+  - Run `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test`
+  - Acceptance criteria:
+    - All checks pass
+    - All new tests pass
+
+---
+
 ## Summary
 
 | Task | Description | Status |
@@ -194,6 +225,11 @@ Run all quality checks and verify acceptance criteria from PRD.
 | 9 | Create config.example.toml | Completed |
 | 10 | Add unit tests | Completed |
 | 11 | Final verification | Completed |
+| 12 | Add missing unit tests for error paths | Completed |
+| 13 | Add config.toml to .gitignore | Completed |
+| 14 | Add PartialEq derive to Config struct | Completed |
+| 15 | Final verification after review fixes | Completed |
 
-**Total Tasks:** 11
-**Completed:** 11
+**Total Tasks:** 15
+**Completed:** 15
+**Pending (Review Fixes):** 0
