@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **SY-2: CI/CD Pipeline** - GitHub Actions workflow for automated quality checks:
+  - Format check (`cargo fmt --check`)
+  - Linting with warnings as errors (`cargo clippy -- -D warnings`)
+  - Test execution (`cargo test`)
+  - Security audit via `rustsec/audit-check`
+  - Dependency caching with `Swatinem/rust-cache`
+  - Triggers on push to `master`/`feature/*` and PRs to `master`
+  - `rust-toolchain.toml` for consistent nightly toolchain
+
 - **SY-1: Project Foundation** - Established Rust workspace with three crates:
   - `synapse-core`: Core library for agent logic, providers, storage, and MCP
   - `synapse-cli`: CLI binary (executable: `synapse`)

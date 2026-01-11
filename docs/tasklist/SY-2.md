@@ -65,8 +65,8 @@ The implementation follows the reference workflow from the `telegram-connector` 
 
 ### 2.5 Verify CI workflow on GitHub
 
-- [ ] Push changes to feature branch
-- [ ] Confirm CI workflow triggers and runs
+- [x] Push changes to feature branch
+- [x] Confirm CI workflow triggers and runs
 - [ ] Confirm both `check` and `audit` jobs pass
 
 **Acceptance Criteria:**

@@ -52,7 +52,7 @@ This release establishes the foundational Rust workspace structure for the Synap
 - Plan: `docs/plan/SY-1.md`
 - Tasklist: `docs/tasklist/SY-1.md`
 - QA Report: `reports/qa/SY-1.md`
-- Summary: `docs/summaries/SY-1-summary.md`
+- Summary: `docs/summary/SY-1-summary.md`
 
 ## Next Phase
 
