@@ -4,9 +4,9 @@
 
 ## Tasks
 
-- [ ] 2.1 Add `clap` to `synapse-cli`, define basic args (message as positional arg)
-- [ ] 2.2 Implement one-shot mode: `synapse "hello"` → prints "Echo: hello"
-- [ ] 2.3 Implement stdin mode: `echo "hello" | synapse` → prints "Echo: hello"
+- [x] 2.1 Add `clap` to `synapse-cli`, define basic args (message as positional arg)
+- [x] 2.2 Implement one-shot mode: `synapse "hello"` → prints "Echo: hello"
+- [x] 2.3 Implement stdin mode: `echo "hello" | synapse` → prints "Echo: hello"
 
 ## Acceptance Criteria
 

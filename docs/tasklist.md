@@ -8,13 +8,14 @@
 |--------|-------------|--------|
 | SY-1 | Project Foundation | ✅ Complete |
 | SY-2 | CI/CD Pipeline | ✅ Complete |
+| SY-3 | Echo CLI | ✅ Complete |
 
 ### Feature Phases
 
 | Phase | Status | Progress |
 |-------|--------|----------|
 | 1. Project Foundation (SY-1) | ✅ Complete | 4/4 |
-| 2. Echo CLI | ⬜ Not Started | 0/3 |
+| 2. Echo CLI (SY-3) | ✅ Complete | 3/3 |
 | 3. Configuration | ⬜ Not Started | 0/4 |
 | 4. Provider Abstraction | ⬜ Not Started | 0/3 |
 | 5. Anthropic Provider | ⬜ Not Started | 0/5 |
@@ -27,7 +28,7 @@
 
 **Legend:** ⬜ Not Started | 🔄 In Progress | ✅ Complete | ⏸️ Blocked
 
-**Current Phase:** 2
+**Current Phase:** 3
 **Last Updated:** 2026-01-11
 
 ---
@@ -49,9 +50,9 @@
 
 **Goal:** CLI accepts input and echoes it back.
 
-- [ ] 2.1 Add `clap` to `synapse-cli`, define basic args (message as positional arg)
-- [ ] 2.2 Implement one-shot mode: `synapse "hello"` → prints "Echo: hello"
-- [ ] 2.3 Implement stdin mode: `echo "hello" | synapse` → prints "Echo: hello"
+- [x] 2.1 Add `clap` to `synapse-cli`, define basic args (message as positional arg)
+- [x] 2.2 Implement one-shot mode: `synapse "hello"` → prints "Echo: hello"
+- [x] 2.3 Implement stdin mode: `echo "hello" | synapse` → prints "Echo: hello"
 
 **Test:** Both invocation methods return echoed input.
 
