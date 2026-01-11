@@ -17,7 +17,7 @@ This plan covers the initial workspace setup for the Synapse project. The implem
 **Purpose:** Define the workspace members and shared configuration.
 
 **Configuration:**
-- Resolver version 2
+- Resolver version 3 (default for Edition 2024)
 - Three workspace members: `synapse-core`, `synapse-cli`, `synapse-telegram`
 - Shared package metadata (edition 2024, rust-version 1.85)
 
@@ -59,7 +59,7 @@ This plan covers the initial workspace setup for the Synapse project. The implem
 
 ```toml
 [workspace]
-resolver = "2"
+resolver = "3"
 members = [
     "synapse-core",
     "synapse-cli",

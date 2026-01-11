@@ -16,7 +16,7 @@ Establish the foundational Rust workspace structure for the Synapse project. Thi
 
 **Acceptance Criteria:**
 - File `Cargo.toml` exists at project root
-- Contains `[workspace]` section with resolver = "2" and members array listing all three crates
+- Contains `[workspace]` section with resolver = "3" (Edition 2024 default) and members array listing all three crates
 - Contains `[workspace.package]` section with edition = "2024" and rust-version = "1.85"
 
 ---
