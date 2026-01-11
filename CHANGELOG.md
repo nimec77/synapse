@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **SY-3: Echo CLI** - CLI argument parsing with clap:
+  - One-shot mode: `synapse "message"` prints `Echo: message`
+  - Stdin mode: `echo "message" | synapse` reads from pipe
+  - TTY detection shows help when no input provided
+  - `--help` and `--version` flags
+
 - **SY-2: CI/CD Pipeline** - GitHub Actions workflow for automated quality checks:
   - Format check (`cargo fmt --check`)
   - Linting with warnings as errors (`cargo clippy -- -D warnings`)
