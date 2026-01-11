@@ -6,7 +6,7 @@ model: inherit
 
 ## Overview
 
-This command synchronizes phase task completion between `docs/tasklist.md` and individual `docs/phase-*.md` files.
+This command synchronizes phase task completion between `docs/tasklist.md` and individual `docs/phase/phase-*.md` files.
 
 ## Steps
 
@@ -16,11 +16,11 @@ Read `docs/tasklist.md` to understand the current state of all phases.
 
 ### Step 2: Find existing phase files
 
-Use Glob to find all `docs/phase-*.md` files (pattern: `docs/phase-[0-9]*.md`).
+Use Glob to find all `docs/phase/phase-*.md` files (pattern: `docs/phase/phase-[0-9]*.md`).
 
 ### Step 3: Sync completed phases FROM phase files TO tasklist
 
-For each existing `docs/phase-N.md` file:
+For each existing `docs/phase/phase-N.md` file:
 
 1. Read the phase file
 2. Check if ALL tasks in that phase are marked complete (`- [x]`)
@@ -39,7 +39,7 @@ Scan `docs/tasklist.md` for the first phase where:
 
 ### Step 5: Extract incomplete phase to separate file
 
-If a `docs/phase-N.md` file does NOT exist for the first incomplete phase:
+If a `docs/phase/phase-N.md` file does NOT exist for the first incomplete phase:
 
 1. Extract from `docs/tasklist.md`:
    - Phase title (from `## Phase N: Title`)
@@ -47,7 +47,7 @@ If a `docs/phase-N.md` file does NOT exist for the first incomplete phase:
    - All tasks for that phase (`- [ ] N.1 ...`, `- [ ] N.2 ...`, etc.)
    - Test/acceptance criteria (from `**Test:**` line)
 
-2. Create `docs/phase-N.md` with this structure:
+2. Create `docs/phase/phase-N.md` with this structure:
    ```markdown
    # Phase N: Title
 
@@ -87,7 +87,7 @@ Output a summary:
 
 ## Rules
 
-- Phase files (`docs/phase-N.md`) are the source of truth for task completion within that phase
+- Phase files (`docs/phase/phase-N.md`) are the source of truth for task completion within that phase
 - The tasklist.md Feature Phases table must stay in sync with actual task completion
 - Never delete or overwrite existing implementation notes in phase files
 - Preserve all formatting and extra sections in existing files
