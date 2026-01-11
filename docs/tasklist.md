@@ -2,9 +2,18 @@
 
 ## Progress Report
 
+### Infrastructure
+
+| Ticket | Description | Status |
+|--------|-------------|--------|
+| SY-1 | Project Foundation | ✅ Complete |
+| SY-2 | CI/CD Pipeline | ✅ Complete |
+
+### Feature Phases
+
 | Phase | Status | Progress |
 |-------|--------|----------|
-| 1. Project Foundation | ✅ Complete | 4/4 |
+| 1. Project Foundation (SY-1) | ✅ Complete | 4/4 |
 | 2. Echo CLI | ⬜ Not Started | 0/3 |
 | 3. Configuration | ⬜ Not Started | 0/4 |
 | 4. Provider Abstraction | ⬜ Not Started | 0/3 |

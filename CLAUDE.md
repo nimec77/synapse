@@ -55,6 +55,23 @@ cargo fmt
 cargo clippy
 ```
 
+## CI/CD
+
+The project uses GitHub Actions for continuous integration. CI runs automatically on:
+- Push to `master` and `feature/*` branches
+- Pull requests targeting `master`
+
+**CI Jobs:**
+- `check`: Format check, Clippy lint, tests
+- `audit`: Security vulnerability scanning (cargo-audit)
+
+**Local pre-commit checks:**
+```bash
+cargo fmt --check
+cargo clippy -- -D warnings
+cargo test
+```
+
 ## Code Conventions
 
 ### Module System
@@ -112,13 +129,24 @@ This project is in early development.
 | `docs/prd/` | PRD documents for each ticket (e.g., `SY-1.prd.md`) |
 | `docs/prd.template.md` | Template for creating new PRDs |
 | `docs/research/` | Research documents for each ticket |
+| `docs/plan/` | Implementation plans for each ticket |
+| `docs/tasklist/` | Task breakdowns for each ticket |
+| `docs/summary/` | Completion summaries for each ticket |
 | `docs/.active_ticket` | Current active ticket identifier |
+| `reports/qa/` | QA reports for each ticket |
+| `CHANGELOG.md` | Project changelog |
 
 ## Workflow
 
-**Starting a new feature:**
+**Starting a new feature (full automated workflow):**
 ```
-/idea SY-<N> "Title" @docs/phase-<N>.md
+/feature-development SY-<N> "Title" @docs/<description>.md
+```
+This runs the complete workflow: PRD → Research → Plan → Tasks → Implementation → Review → QA → Docs.
+
+**Starting a new feature (manual):**
+```
+/analysis SY-<N> "Title" @docs/<description>.md
 ```
 This creates a PRD in `docs/prd/SY-<N>.prd.md` and sets `docs/.active_ticket`.
 
@@ -139,3 +167,10 @@ This creates a PRD in `docs/prd/SY-<N>.prd.md` and sets `docs/.active_ticket`.
 - "Proceed with this approach?"
 - "Ready to commit?"
 - "Continue to next task?"
+
+## Completed Tickets
+
+| Ticket | Description | Summary |
+|--------|-------------|---------|
+| SY-1 | Project Foundation | Workspace structure with 3 crates |
+| SY-2 | CI/CD Pipeline | GitHub Actions with check + audit jobs |
