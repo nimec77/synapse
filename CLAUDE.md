@@ -99,6 +99,7 @@ src/
 - **LLM Providers**: Custom implementation (no rig/genai/async-openai) for learning depth
 - **Async Runtime**: Tokio
 - **Error Handling**: `thiserror` for library errors, `anyhow` for application errors
+- **Configuration**: `toml` + `serde` for TOML parsing, `dirs` for cross-platform paths
 - **Session Storage**: SQLite via `sqlx` (supports switching to PostgreSQL/MySQL)
 - **Streaming**: SSE streaming via `eventsource-stream` + `async-stream`
 - **MCP**: Model Context Protocol support via `rmcp`
@@ -108,7 +109,7 @@ src/
 
 | Crate | Purpose |
 |-------|---------|
-| `synapse-core` | Core library: agent, providers, storage, MCP |
+| `synapse-core` | Core library: config, agent, providers, storage, MCP |
 | `synapse-cli` | CLI binary: REPL and one-shot modes |
 | `synapse-telegram` | Telegram bot interface |
 
@@ -125,7 +126,8 @@ This project is in early development.
 | `docs/conventions.md` | Code rules: DO and DON'T |
 | `docs/tasklist.md` | Development plan with progress tracking |
 | `docs/workflow.md` | Step-by-step collaboration process |
-| `docs/phase-*.md` | Phase-specific task breakdowns |
+| `docs/phase/phase-*.md` | Phase-specific task breakdowns |
+| `config.example.toml` | Example configuration file with documentation |
 | `docs/prd/` | PRD documents for each ticket (e.g., `SY-1.prd.md`) |
 | `docs/prd.template.md` | Template for creating new PRDs |
 | `docs/research/` | Research documents for each ticket |
@@ -174,3 +176,5 @@ This creates a PRD in `docs/prd/SY-<N>.prd.md` and sets `docs/.active_ticket`.
 |--------|-------------|---------|
 | SY-1 | Project Foundation | Workspace structure with 3 crates |
 | SY-2 | CI/CD Pipeline | GitHub Actions with check + audit jobs |
+| SY-3 | Echo CLI | CLI with clap, one-shot and stdin input modes |
+| SY-4 | Configuration | TOML config loading with multi-location priority |
