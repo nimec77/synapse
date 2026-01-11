@@ -4,7 +4,7 @@
 
 | Phase | Status | Progress |
 |-------|--------|----------|
-| 1. Project Foundation | ⬜ Not Started | 0/4 |
+| 1. Project Foundation | ✅ Complete | 4/4 |
 | 2. Echo CLI | ⬜ Not Started | 0/3 |
 | 3. Configuration | ⬜ Not Started | 0/4 |
 | 4. Provider Abstraction | ⬜ Not Started | 0/3 |
@@ -18,8 +18,8 @@
 
 **Legend:** ⬜ Not Started | 🔄 In Progress | ✅ Complete | ⏸️ Blocked
 
-**Current Phase:** None
-**Last Updated:** —
+**Current Phase:** 2
+**Last Updated:** 2026-01-11
 
 ---
 
@@ -27,10 +27,10 @@
 
 **Goal:** Workspace compiles, all crates exist.
 
-- [ ] 1.1 Create workspace `Cargo.toml` with members: `synapse-core`, `synapse-cli`, `synapse-telegram`
-- [ ] 1.2 Create `synapse-core` crate with `lib.rs` exporting placeholder module
-- [ ] 1.3 Create `synapse-cli` crate with `main.rs` printing "Synapse CLI"
-- [ ] 1.4 Verify: `cargo build` succeeds for entire workspace
+- [x] 1.1 Create workspace `Cargo.toml` with members: `synapse-core`, `synapse-cli`, `synapse-telegram`
+- [x] 1.2 Create `synapse-core` crate with `lib.rs` exporting placeholder module
+- [x] 1.3 Create `synapse-cli` crate with `main.rs` printing "Synapse CLI"
+- [x] 1.4 Verify: `cargo build` succeeds for entire workspace
 
 **Test:** `cargo run -p synapse-cli` prints "Synapse CLI"
 

@@ -16,7 +16,7 @@ and record the results.
 - docs/prd/<ticket>.prd.md
 - docs/plan/<ticket>.md
 - docs/tasklist/<ticket>.md
-- docs/qa/* (previous reports, if any)
+- reports/qa/* (previous reports, if any)
 
 ## Output
 

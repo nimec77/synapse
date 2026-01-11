@@ -21,6 +21,7 @@ You are an orchestrator that coordinates code-writer and test-writer agents to i
 ### Step 1: Setup
 
 1. Read `docs/tasklist/$1.md` and find the first task marked with `- [ ]`
+   - **Store the exact task line text** (e.g., `- [ ] 1.1 Create workspace Cargo.toml`) for later update
 2. Read `docs/prd/$1.prd.md` for requirements context
 3. Read `docs/plan/$1.md` for implementation details
 4. Create a git savepoint:
@@ -107,17 +108,20 @@ If any verification step failed:
 
 If verification passed:
 
-1. Mark the task as complete in `docs/tasklist/$1.md`:
-   - Change `- [ ]` to `- [x]`
+1. **Update the tasklist** in `docs/tasklist/$1.md`:
+   - Use the Edit tool to replace the stored task line from Step 1
+   - Change `- [ ]` to `- [x]` for that specific task
+   - Example: `- [ ] 1.1 Create workspace` → `- [x] 1.1 Create workspace`
 
 2. Show summary:
    - Files modified/created
    - Tests added (if any)
    - Verification results
+   - Tasklist update confirmation
 
 3. Ask: **"Ready to commit?"**
 
-4. After user confirms, commit with conventional message
+4. After user confirms, commit with conventional message (include tasklist update in commit)
 
 5. Ask: **"Continue to next task?"**
 
