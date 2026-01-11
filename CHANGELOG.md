@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **SY-4: Configuration System** - TOML-based configuration loading:
+  - `Config` struct with `provider`, `api_key`, and `model` fields
+  - Priority-based config loading: `SYNAPSE_CONFIG` env var > `./config.toml` > `~/.config/synapse/config.toml` > defaults
+  - Default values: provider = "deepseek", model = "deepseek-chat"
+  - `ConfigError` with `IoError` and `ParseError` variants
+  - CLI displays configured provider on startup
+  - `config.example.toml` with documented options
+  - Dependencies: toml, serde, dirs, thiserror in synapse-core
+  - synapse-cli now depends on synapse-core
+
 - **SY-3: Echo CLI** - CLI argument parsing with clap:
   - One-shot mode: `synapse "message"` prints `Echo: message`
   - Stdin mode: `echo "message" | synapse` reads from pipe
