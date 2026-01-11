@@ -1,0 +1,21 @@
+# Synapse Configuration
+# Copy this file to one of:
+#   - ./config.toml (local, highest priority after SYNAPSE_CONFIG env var)
+#   - ~/.config/synapse/config.toml (user default)
+#
+# You can also set SYNAPSE_CONFIG environment variable to a custom path.
+
+# LLM provider to use
+# Options: deepseek, anthropic, openai (more providers coming)
+provider = "deepseek"
+
+# API key for the selected provider
+# You can also use provider-specific environment variables in future phases
+# WARNING: Keep this file secure! Run: chmod 600 ~/.config/synapse/config.toml
+# api_key = "your-api-key-here"
+
+# Model to use
+# DeepSeek: deepseek-chat, deepseek-coder
+# Anthropic: claude-3-5-sonnet-20241022, claude-3-opus-20240229
+# OpenAI: gpt-4, gpt-4-turbo, gpt-3.5-turbo
+model = "deepseek-chat"
