@@ -33,6 +33,7 @@ Before writing any code:
 
 After approval:
 - [ ] Write code following `conventions.md`
+- [ ] Use new module system (`module.rs` + `module/`) — **never use `mod.rs`**
 - [ ] Keep changes minimal and focused
 - [ ] Run `cargo check` to verify compilation
 

@@ -1,0 +1,13 @@
+[workspace]
+resolver = "3"
+members = [
+    "synapse-core",
+    "synapse-cli",
+    "synapse-telegram",
+]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.85"
+authors = ["Synapse Contributors"]
+license = "MIT"
