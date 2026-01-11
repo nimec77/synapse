@@ -1,0 +1,11 @@
+[package]
+name = "synapse-telegram"
+version = "0.1.0"
+edition.workspace = true
+
+[[bin]]
+name = "synapse-telegram"
+path = "src/main.rs"
+
+[dependencies]
+# No dependencies for Phase 1
