@@ -4,10 +4,10 @@
 
 ## Tasks
 
-- [ ] 3.1 Create `synapse-core/src/config.rs` with `Config` struct (provider, api_key, model)
-- [ ] 3.2 Add `toml` + `serde` dependencies, implement TOML parsing
-- [ ] 3.3 Create `config.example.toml` in repo root
-- [ ] 3.4 Load config in CLI, print loaded provider name
+- [x] 3.1 Create `synapse-core/src/config.rs` with `Config` struct (provider, api_key, model)
+- [x] 3.2 Add `toml` + `serde` dependencies, implement TOML parsing
+- [x] 3.3 Create `config.example.toml` in repo root
+- [x] 3.4 Load config in CLI, print loaded provider name
 
 ## Acceptance Criteria
 
