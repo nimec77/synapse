@@ -2,9 +2,10 @@
 
 use std::io::{self, IsTerminal, Read};
 
+use anyhow::{Context, Result};
 use clap::Parser;
 
-use synapse_core::Config;
+use synapse_core::{AnthropicProvider, Config, LlmProvider, Message, Role};
 
 /// Synapse CLI - AI agent command-line interface
 #[derive(Parser)]
@@ -15,20 +16,37 @@ struct Args {
     message: Option<String>,
 }
 
-fn main() {
+#[tokio::main]
+async fn main() -> Result<()> {
     let args = Args::parse();
     let config = Config::load().unwrap_or_default();
 
-    match get_message(&args) {
-        Ok(message) => {
-            println!("Provider: {}", config.provider);
-            println!("{}", format_echo(&message));
-        }
+    let message = match get_message(&args) {
+        Ok(msg) => msg,
         Err(_) => {
             // No input provided, show help
             Args::parse_from(["synapse", "--help"]);
+            return Ok(());
         }
-    }
+    };
+
+    // Validate API key is present
+    let api_key = config
+        .api_key
+        .context("API key not configured. Add api_key to config.toml")?;
+
+    // Create provider
+    let provider = AnthropicProvider::new(api_key, &config.model);
+
+    // Send request
+    let messages = vec![Message::new(Role::User, message)];
+    let response = provider
+        .complete(&messages)
+        .await
+        .context("Failed to get response from Claude")?;
+
+    println!("{}", response.content);
+    Ok(())
 }
 
 /// Retrieves the message from arguments or stdin.
@@ -55,32 +73,19 @@ fn get_message(args: &Args) -> io::Result<String> {
     Ok(buffer.trim_end().to_string())
 }
 
-/// Formats the echo output with the "Echo: " prefix.
-fn format_echo(message: &str) -> String {
-    format!("Echo: {}", message)
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
-    fn test_format_echo_simple() {
-        assert_eq!(format_echo("hello"), "Echo: hello");
-    }
+    fn test_args_parse() {
+        use super::Args;
+        use clap::Parser;
 
-    #[test]
-    fn test_format_echo_with_spaces() {
-        assert_eq!(format_echo("Hello, world!"), "Echo: Hello, world!");
-    }
+        // Test with message argument
+        let args = Args::parse_from(["synapse", "Hello"]);
+        assert_eq!(args.message, Some("Hello".to_string()));
 
-    #[test]
-    fn test_format_echo_multiline() {
-        assert_eq!(format_echo("Line 1\nLine 2"), "Echo: Line 1\nLine 2");
-    }
-
-    #[test]
-    fn test_format_echo_empty() {
-        assert_eq!(format_echo(""), "Echo: ");
+        // Test without message argument
+        let args = Args::parse_from(["synapse"]);
+        assert!(args.message.is_none());
     }
 }

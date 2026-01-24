@@ -9,7 +9,7 @@ pub mod provider;
 
 pub use config::{Config, ConfigError};
 pub use message::{Message, Role};
-pub use provider::{LlmProvider, MockProvider, ProviderError};
+pub use provider::{AnthropicProvider, LlmProvider, MockProvider, ProviderError};
 
 /// Placeholder module for initial setup.
 pub mod placeholder {
