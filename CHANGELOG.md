@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **SY-5: Provider Abstraction** - LLM provider abstraction layer:
+  - `Role` enum with `System`, `User`, `Assistant` variants for conversation roles
+  - `Message` struct with role and content fields for conversation messages
+  - `LlmProvider` trait with async `complete()` method as the provider contract
+  - `MockProvider` for testing with configurable LIFO responses
+  - `ProviderError` enum with `ProviderError` and `RequestFailed` variants
+  - Object-safe, thread-safe trait design (`Send + Sync` bounds)
+  - Dependencies: tokio (rt, macros), async-trait in synapse-core
+
 - **SY-4: Configuration System** - TOML-based configuration loading:
   - `Config` struct with `provider`, `api_key`, and `model` fields
   - Priority-based config loading: `SYNAPSE_CONFIG` env var > `./config.toml` > `~/.config/synapse/config.toml` > defaults
