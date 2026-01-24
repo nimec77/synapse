@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **SY-6: Anthropic Provider** - Real Claude API integration:
+  - `AnthropicProvider` implementing `LlmProvider` trait for Anthropic Messages API
+  - HTTP client via `reqwest` with JSON serialization for API requests
+  - System message extraction to separate `system` field in API request
+  - `AuthenticationError` variant added to `ProviderError` for 401 responses
+  - API version pinned to `2023-06-01` for stability
+  - CLI now sends messages to Claude and displays real responses
+  - API key validation with clear error message if missing
+  - Support for both one-shot (`synapse "msg"`) and piped input modes
+  - 8 unit tests for request/response serialization and message handling
+  - Dependencies: reqwest (json), serde_json in synapse-core; tokio (rt-multi-thread), anyhow in synapse-cli
+
 - **SY-5: Provider Abstraction** - LLM provider abstraction layer:
   - `Role` enum with `System`, `User`, `Assistant` variants for conversation roles
   - `Message` struct with role and content fields for conversation messages

@@ -4,11 +4,11 @@
 
 ## Tasks
 
-- [ ] 5.1 Create `synapse-core/src/provider/anthropic.rs` with `AnthropicProvider` struct
-- [ ] 5.2 Add `reqwest` (with `json` feature), implement Messages API request
-- [ ] 5.3 Create `synapse-core/src/error.rs` with `ProviderError` enum
-- [ ] 5.4 Wire provider into CLI: load config → create provider → call API
-- [ ] 5.5 Add API key validation (fail fast if missing)
+- [x] 5.1 Create `synapse-core/src/provider/anthropic.rs` with `AnthropicProvider` struct
+- [x] 5.2 Add `reqwest` (with `json` feature), implement Messages API request
+- [x] 5.3 Extend `ProviderError` enum with `AuthenticationError` variant
+- [x] 5.4 Wire provider into CLI: load config → create provider → call API
+- [x] 5.5 Add API key validation (fail fast if missing)
 
 ## Acceptance Criteria
 
