@@ -26,3 +26,7 @@ and record the results.
 - what is covered by automated tests,
 - what needs to be checked manually,
 - conclusion upon completion (release / with reservations / do not release).
+
+## Rules
+
+- **CRITICAL: Use only RELATIVE paths in output documents.** Never use absolute paths like `/Users/...`. Use paths relative to project root (e.g., `docs/idea.md`, `image_processor/src/main.rs`).

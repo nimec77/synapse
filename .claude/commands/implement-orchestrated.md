@@ -1,7 +1,7 @@
 ---
 description: "Implement a task with separate code and test phases, automated verification, and refinement"
 argument-hint: "[ticket-id]"
-allowed-tools: Read, Write, Glob, Grep, Bash, Task, rust-analyzer-lsp
+allowed-tools: Read, Write, Glob, Grep, Bash, Task, rust-analyzer-lsp, AskUserQuestion
 model: inherit
 ---
 
@@ -16,11 +16,12 @@ If the ticket ID is not provided as a parameter (`$1` is empty):
 
 ## Orchestrator Workflow
 
-You are an orchestrator that coordinates code-writer and test-writer agents to implement tasks safely and systematically.
+You are an orchestrator that coordinates code-writer and test-writer agents to implement tasks safely and systematically. Process all tasks to completion automatically, showing progress as you go.
 
 ### Step 1: Setup
 
 1. Read `docs/tasklist/$1.md` and find the first task marked with `- [ ]`
+   - **If no unchecked tasks exist**: Report "All tasks in `docs/tasklist/$1.md` are already complete." and **return to caller**
    - **Store the exact task line text** (e.g., `- [ ] 1.1 Create workspace Cargo.toml`) for later update
 2. Read `docs/prd/$1.prd.md` for requirements context
 3. Read `docs/plan/$1.md` for implementation details
@@ -30,14 +31,13 @@ You are an orchestrator that coordinates code-writer and test-writer agents to i
    ```
    (If working tree is clean, skip stash but note the current HEAD for rollback)
 
-### Step 2: Plan Review
+### Step 2: Plan Announcement
 
-Present the task to the user:
-- What will be implemented
-- Which files will be affected
-- Ask: **"Proceed with this approach?"**
+**Briefly announce** what will be implemented:
+- Task description (1-2 sentences)
+- Files that will be created or modified
 
-**Wait for user approval before continuing.**
+Then proceed immediately to implementation.
 
 ### Step 3: Code Implementation
 
@@ -50,17 +50,12 @@ Wait for code-writer to complete and report results.
 
 ### Step 4: Test Implementation
 
-Ask the user: **"Write tests for this implementation?"**
-
-If user confirms:
-- Invoke the `test-writer` agent with:
-  - Task description
-  - List of files modified by code-writer
-  - Instructions to write tests for the new code
+**Always write tests.** Invoke the `test-writer` agent with:
+- Task description
+- List of files modified by code-writer
+- Instructions to write tests for the new code
 
 Wait for test-writer to complete and report results.
-
-If user declines, skip to Step 5.
 
 ### Step 5: Verification
 
@@ -69,7 +64,7 @@ Run verification commands in sequence:
 cargo fmt
 cargo check
 cargo test
-cargo clippy -- -D warnings
+cargo clippy --tests -- -D warnings
 ```
 
 Collect results for all commands.
@@ -102,7 +97,7 @@ If any verification step failed:
    git stash pop  # or git restore . if no stash
    ```
    Report: "Refinement failed after 3 attempts. Changes have been rolled back. Manual intervention required."
-   Show the last error messages and terminate.
+   Show the last error messages and return to caller with failure status.
 
 ### Step 7: Completion
 
@@ -115,25 +110,25 @@ If verification passed:
 
 2. Show summary:
    - Files modified/created
-   - Tests added (if any)
+   - Tests added
    - Verification results
    - Tasklist update confirmation
 
-3. Ask: **"Ready to commit?"**
-
-4. After user confirms, commit with conventional message (include tasklist update in commit)
-
-5. Ask: **"Continue to next task?"**
+3. **Check for remaining tasks** in `docs/tasklist/$1.md`:
+   - If there are more unchecked tasks (`- [ ]`): Return to Step 1 immediately with the next task
+   - If **all tasks are complete** (no `- [ ]` remaining):
+     - Update tasklist status to `IMPLEMENT_STEP_OK`
+     - Report: "All tasks in `docs/tasklist/$1.md` are complete."
+     - **Return to caller** — do not ask about other files or next steps. The parent command will handle subsequent gates.
 
 ---
 
-## Checkpoints
+## Notes
 
-Never skip these confirmations:
-1. **Before implementing** — "Proceed with this approach?"
-2. **Before writing tests** — "Write tests for this implementation?"
-3. **Before committing** — "Ready to commit?"
-4. **Before next task** — "Continue to next task?"
+- Tests are always written automatically after code implementation.
+- Commits are handled separately, not by this orchestrator.
+- When all tasks are complete, return to caller without asking — the parent command controls subsequent workflow gates.
+- All tasks are processed automatically without confirmation prompts.
 
 ---
 
@@ -141,8 +136,8 @@ Never skip these confirmations:
 
 | Situation | Action |
 |-----------|--------|
-| code-writer reports ambiguity | Stop, ask user for clarification |
-| test-writer finds production bug | Report to user, ask how to proceed |
+| code-writer reports ambiguity | Stop, use AskUserQuestion for clarification |
+| test-writer finds production bug | Report to user, use AskUserQuestion to ask how to proceed |
 | Refinement stuck (same errors) | Rollback, escalate to user |
 | Max refinements reached | Rollback, show errors, terminate |
 | Git stash/restore fails | Report error, ask user to resolve manually |

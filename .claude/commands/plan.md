@@ -1,7 +1,7 @@
 ---
 description: "Create the architecture and implementation plan for the ticket"
 argument-hint: "[ticket-id]"
-allowed-tools: Read, Write, Glob, Grep, rust-analyzer-lsp
+allowed-tools: Read, Write, Glob, Grep, rust-analyzer-lsp, AskUserQuestion
 model: inherit
 ---
 

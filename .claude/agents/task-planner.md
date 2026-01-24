@@ -13,8 +13,16 @@ docs/tasklist/<ticket>.md with small, verifiable tasks.
 ## Input
 
 - docs/.active_ticket
-- ​​docs/prd/<ticket>.prd.md
+- docs/prd/<ticket>.prd.md
 - docs/plan/<ticket>.md
+
+## Preconditions
+
+Before creating the tasklist, you MUST verify that `docs/plan/<ticket>.md` contains `Status: PLAN_APPROVED`.
+
+If the status is not `PLAN_APPROVED` (e.g., `DRAFT` or missing):
+1. Display error: "Error: Plan for ticket <ticket> is not approved. Run /plan to create and approve the plan first."
+2. Terminate immediately without creating or modifying any files.
 
 ## Output
 
@@ -32,3 +40,4 @@ See `docs/tasklist.example.md` for the expected output format.
 
 - Tasks should be as independent as possible.
 - The acceptance criterion must be verifiable (not "improve", but "there is test X, it passes scenario Y").
+- **CRITICAL: Use only RELATIVE paths in output documents.** Never use absolute paths like `/Users/...`. Use paths relative to project root (e.g., `docs/idea.md`, `image_processor/src/main.rs`).

@@ -50,3 +50,4 @@ When adding tasks to the tasklist, use this format:
 - Focus on architecture, invariants, security, and readability.
 - Always add blocking/important issues as tasks - do not just suggest them.
 - Nice-to-have items can be mentioned without adding to tasklist.
+- **CRITICAL: Use only RELATIVE paths in output documents.** Never use absolute paths like `/Users/...`. Use paths relative to project root (e.g., `docs/idea.md`, `image_processor/src/main.rs`).
