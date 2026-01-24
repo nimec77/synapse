@@ -3,8 +3,10 @@
 //! Defines the [`LlmProvider`] trait that all LLM provider implementations
 //! must fulfill, and the [`ProviderError`] type for error handling.
 
+mod anthropic;
 mod mock;
 
+pub use anthropic::AnthropicProvider;
 pub use mock::MockProvider;
 
 use async_trait::async_trait;
@@ -24,6 +26,10 @@ pub enum ProviderError {
     /// Request failed due to network or connection issues.
     #[error("request failed: {0}")]
     RequestFailed(String),
+
+    /// Authentication failed (e.g., invalid API key).
+    #[error("authentication failed: {0}")]
+    AuthenticationError(String),
 }
 
 /// Trait for LLM providers.
