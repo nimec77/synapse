@@ -178,3 +178,4 @@ This creates a PRD in `docs/prd/SY-<N>.prd.md` and sets `docs/.active_ticket`.
 | SY-2 | CI/CD Pipeline | GitHub Actions with check + audit jobs |
 | SY-3 | Echo CLI | CLI with clap, one-shot and stdin input modes |
 | SY-4 | Configuration | TOML config loading with multi-location priority |
+| SY-5 | Provider Abstraction | LlmProvider trait, Message/Role types, MockProvider |

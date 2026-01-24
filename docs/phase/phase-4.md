@@ -4,9 +4,9 @@
 
 ## Tasks
 
-- [ ] 4.1 Create `synapse-core/src/message.rs` with `Role` enum and `Message` struct
-- [ ] 4.2 Create `synapse-core/src/provider.rs` with `LlmProvider` trait (async `complete` method)
-- [ ] 4.3 Create `MockProvider` in `provider/mock.rs` returning static response
+- [x] 4.1 Create `synapse-core/src/message.rs` with `Role` enum and `Message` struct
+- [x] 4.2 Create `synapse-core/src/provider.rs` with `LlmProvider` trait (async `complete` method)
+- [x] 4.3 Create `MockProvider` in `provider/mock.rs` returning static response
 
 ## Acceptance Criteria
 

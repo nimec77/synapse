@@ -17,7 +17,7 @@
 | 1. Project Foundation (SY-1) | ✅ Complete | 4/4 |
 | 2. Echo CLI (SY-3) | ✅ Complete | 3/3 |
 | 3. Configuration | ✅ Complete | 4/4 |
-| 4. Provider Abstraction | ⬜ Not Started | 0/3 |
+| 4. Provider Abstraction (SY-5) | ✅ Complete | 3/3 |
 | 5. Anthropic Provider | ⬜ Not Started | 0/5 |
 | 6. Streaming Responses | ⬜ Not Started | 0/4 |
 | 7. Session Storage | ⬜ Not Started | 0/5 |
@@ -28,7 +28,7 @@
 
 **Legend:** ⬜ Not Started | 🔄 In Progress | ✅ Complete | ⏸️ Blocked
 
-**Current Phase:** 4
+**Current Phase:** 5
 **Last Updated:** 2026-01-11
 
 ---
@@ -75,9 +75,9 @@
 
 **Goal:** Define LLM provider trait in core.
 
-- [ ] 4.1 Create `synapse-core/src/message.rs` with `Role` enum and `Message` struct
-- [ ] 4.2 Create `synapse-core/src/provider.rs` with `LlmProvider` trait (async `complete` method)
-- [ ] 4.3 Create `MockProvider` in `provider/mock.rs` returning static response
+- [x] 4.1 Create `synapse-core/src/message.rs` with `Role` enum and `Message` struct
+- [x] 4.2 Create `synapse-core/src/provider.rs` with `LlmProvider` trait (async `complete` method)
+- [x] 4.3 Create `MockProvider` in `provider/mock.rs` returning static response
 
 **Test:** Unit test calls `MockProvider::complete()` and gets response.
 
