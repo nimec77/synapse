@@ -16,7 +16,7 @@
 |-------|--------|----------|
 | 1. Project Foundation (SY-1) | ✅ Complete | 4/4 |
 | 2. Echo CLI (SY-3) | ✅ Complete | 3/3 |
-| 3. Configuration | 🔄 In Progress | 0/4 |
+| 3. Configuration | ✅ Complete | 4/4 |
 | 4. Provider Abstraction | ⬜ Not Started | 0/3 |
 | 5. Anthropic Provider | ⬜ Not Started | 0/5 |
 | 6. Streaming Responses | ⬜ Not Started | 0/4 |
@@ -28,7 +28,7 @@
 
 **Legend:** ⬜ Not Started | 🔄 In Progress | ✅ Complete | ⏸️ Blocked
 
-**Current Phase:** 3
+**Current Phase:** 4
 **Last Updated:** 2026-01-11
 
 ---
@@ -62,10 +62,10 @@
 
 **Goal:** Load settings from TOML file.
 
-- [ ] 3.1 Create `synapse-core/src/config.rs` with `Config` struct (provider, api_key, model)
-- [ ] 3.2 Add `toml` + `serde` dependencies, implement TOML parsing
-- [ ] 3.3 Create `config.example.toml` in repo root
-- [ ] 3.4 Load config in CLI, print loaded provider name
+- [x] 3.1 Create `synapse-core/src/config.rs` with `Config` struct (provider, api_key, model)
+- [x] 3.2 Add `toml` + `serde` dependencies, implement TOML parsing
+- [x] 3.3 Create `config.example.toml` in repo root
+- [x] 3.4 Load config in CLI, print loaded provider name
 
 **Test:** `synapse "test"` prints "Provider: anthropic" (from config)
 
