@@ -1,6 +1,6 @@
 # SY-5: Phase 4 - Provider Abstraction
 
-Status: TASKLIST_READY
+Status: IMPLEMENT_STEP_OK
 
 Context: PRD `docs/prd/SY-5.prd.md`; Plan `docs/plan/SY-5.md`
 
@@ -10,14 +10,14 @@ This phase establishes the LLM provider abstraction layer in synapse-core, defin
 
 ## Tasks
 
-- [ ] **Task 1: Add async dependencies to synapse-core**
+- [x] **Task 1: Add async dependencies to synapse-core**
   - Add `tokio = { version = "1", features = ["rt"] }` to `synapse-core/Cargo.toml`
   - Add `async-trait = "0.1"` to `synapse-core/Cargo.toml`
   - **Acceptance Criteria:**
     - `cargo build -p synapse-core` succeeds
     - Both dependencies appear in `Cargo.lock`
 
-- [ ] **Task 2: Create message.rs with Role and Message types**
+- [x] **Task 2: Create message.rs with Role and Message types**
   - Create `synapse-core/src/message.rs`
   - Define `Role` enum with `System`, `User`, `Assistant` variants (derive `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq`)
   - Define `Message` struct with `role: Role` and `content: String` fields (derive `Debug`, `Clone`, `PartialEq`)
@@ -29,7 +29,7 @@ This phase establishes the LLM provider abstraction layer in synapse-core, defin
     - `Message::new(Role::User, "test")` creates a message with correct role and content
     - `Message::new(Role::User, String::from("test"))` also works (Into<String>)
 
-- [ ] **Task 3: Create provider.rs with ProviderError and LlmProvider trait**
+- [x] **Task 3: Create provider.rs with ProviderError and LlmProvider trait**
   - Create `synapse-core/src/provider.rs`
   - Define `ProviderError` enum using `thiserror` with `ProviderError { message }` and `RequestFailed(String)` variants
   - Define `LlmProvider` trait with `async fn complete(&self, messages: &[Message]) -> Result<Message, ProviderError>`
@@ -41,7 +41,7 @@ This phase establishes the LLM provider abstraction layer in synapse-core, defin
     - `cargo build -p synapse-core` succeeds
     - `LlmProvider` trait is object-safe (can be used as `dyn LlmProvider`)
 
-- [ ] **Task 4: Create provider/mock.rs with MockProvider**
+- [x] **Task 4: Create provider/mock.rs with MockProvider**
   - Create `synapse-core/src/provider/mock.rs`
   - Implement `MockProvider` struct with `Mutex<Vec<Message>>` for configurable responses
   - Implement `MockProvider::new()` constructor
@@ -55,7 +55,7 @@ This phase establishes the LLM provider abstraction layer in synapse-core, defin
     - `MockProvider::new().with_response("Hello").complete(&messages).await` returns "Hello"
     - Multiple responses are returned in LIFO order
 
-- [ ] **Task 5: Update lib.rs with module exports**
+- [x] **Task 5: Update lib.rs with module exports**
   - Add `pub mod message;` to `synapse-core/src/lib.rs`
   - Add `pub mod provider;` to `synapse-core/src/lib.rs`
   - Add re-exports: `pub use message::{Message, Role};`
@@ -64,7 +64,7 @@ This phase establishes the LLM provider abstraction layer in synapse-core, defin
     - `cargo build -p synapse-core` succeeds
     - External crates can use `synapse_core::{Message, Role, LlmProvider, MockProvider, ProviderError}`
 
-- [ ] **Task 6: Final verification**
+- [x] **Task 6: Final verification**
   - Run `cargo fmt` on workspace
   - Run `cargo clippy -- -D warnings` on workspace
   - Run `cargo test` on workspace
