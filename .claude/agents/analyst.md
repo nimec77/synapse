@@ -28,3 +28,4 @@ Rules:
 - Do not invent business requirements if they do not follow from the context.
 - If there is insufficient information, clearly list the questions in "Open Questions".
 - For context, always refer to the files @docs/idea.md and @docs/vision.md
+- **CRITICAL: Use only RELATIVE paths in output documents.** Never use absolute paths like `/Users/...`. Use paths relative to project root (e.g., `docs/idea.md`, `image_processor/src/main.rs`).

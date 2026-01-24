@@ -21,10 +21,11 @@ You are the team's tech writer.
 ## Logout
 
 - Updated:
-- <ticket>-summary.md
+- docs/summaries/<ticket>-summary.md
 - CHANGELOG.md
 
 Rules:
 
 - Write in a way that's understandable to a new developer and incident commander without reading the code.
 - Don't break the existing document structure without explicit user input.
+- **CRITICAL: Use only RELATIVE paths in output documents.** Never use absolute paths like `/Users/...`. Use paths relative to project root (e.g., `docs/idea.md`, `image_processor/src/main.rs`).
