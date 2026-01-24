@@ -18,7 +18,7 @@
 | 2. Echo CLI (SY-3) | ✅ Complete | 3/3 |
 | 3. Configuration | ✅ Complete | 4/4 |
 | 4. Provider Abstraction (SY-5) | ✅ Complete | 3/3 |
-| 5. Anthropic Provider | ⬜ Not Started | 0/5 |
+| 5. Anthropic Provider (SY-6) | ✅ Complete | 5/5 |
 | 6. Streaming Responses | ⬜ Not Started | 0/4 |
 | 7. Session Storage | ⬜ Not Started | 0/5 |
 | 8. CLI REPL | ⬜ Not Started | 0/4 |
@@ -28,7 +28,7 @@
 
 **Legend:** ⬜ Not Started | 🔄 In Progress | ✅ Complete | ⏸️ Blocked
 
-**Current Phase:** 5
+**Current Phase:** 6
 **Last Updated:** 2026-01-11
 
 ---
@@ -87,11 +87,11 @@
 
 **Goal:** Real API calls to Claude.
 
-- [ ] 5.1 Create `synapse-core/src/provider/anthropic.rs` with `AnthropicProvider` struct
-- [ ] 5.2 Add `reqwest` (with `json` feature), implement Messages API request
-- [ ] 5.3 Create `synapse-core/src/error.rs` with `ProviderError` enum
-- [ ] 5.4 Wire provider into CLI: load config → create provider → call API
-- [ ] 5.5 Add API key validation (fail fast if missing)
+- [x] 5.1 Create `synapse-core/src/provider/anthropic.rs` with `AnthropicProvider` struct
+- [x] 5.2 Add `reqwest` (with `json` feature), implement Messages API request
+- [x] 5.3 Extend `ProviderError` enum with `AuthenticationError` variant
+- [x] 5.4 Wire provider into CLI: load config → create provider → call API
+- [x] 5.5 Add API key validation (fail fast if missing)
 
 **Test:** `synapse "Say hello"` returns real Claude response.
 
