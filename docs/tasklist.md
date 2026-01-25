@@ -140,6 +140,14 @@
 
 **Test:** `synapse sessions list` shows previous conversations.
 
+**Implementation Notes:**
+- **Session IDs**: UUID v8 (RFC 9562) - modern replacement for v4, sortable, universally unique
+- **Database URL resolution priority**:
+  1. `DATABASE_URL` environment variable (highest priority)
+  2. `session.database_url` in config.toml
+  3. Default: `sqlite:~/.config/synapse/sessions.db`
+- **Dependencies**: `sqlx` (sqlite), `uuid` (v8, serde), `chrono` (serde)
+
 ---
 
 ## Phase 9: CLI REPL
