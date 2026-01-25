@@ -3,8 +3,11 @@
 //! Provides the [`Role`] enum and [`Message`] struct that represent
 //! conversation messages across all LLM providers.
 
+use serde::{Deserialize, Serialize};
+
 /// Role of a message in the conversation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Role {
     /// System instructions for the model.
     System,
@@ -84,5 +87,31 @@ mod tests {
         let role = Role::User;
         let copied = role;
         assert_eq!(role, copied);
+    }
+
+    #[test]
+    fn test_role_serialization() {
+        assert_eq!(serde_json::to_string(&Role::System).unwrap(), "\"system\"");
+        assert_eq!(serde_json::to_string(&Role::User).unwrap(), "\"user\"");
+        assert_eq!(
+            serde_json::to_string(&Role::Assistant).unwrap(),
+            "\"assistant\""
+        );
+    }
+
+    #[test]
+    fn test_role_deserialization() {
+        assert_eq!(
+            serde_json::from_str::<Role>("\"system\"").unwrap(),
+            Role::System
+        );
+        assert_eq!(
+            serde_json::from_str::<Role>("\"user\"").unwrap(),
+            Role::User
+        );
+        assert_eq!(
+            serde_json::from_str::<Role>("\"assistant\"").unwrap(),
+            Role::Assistant
+        );
     }
 }

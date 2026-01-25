@@ -44,6 +44,38 @@ pub struct Config {
     /// Model name to use.
     #[serde(default = "default_model")]
     pub model: String,
+
+    /// Session storage configuration.
+    #[serde(default)]
+    pub session: Option<SessionConfig>,
+}
+
+/// Session storage configuration.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct SessionConfig {
+    /// Maximum number of sessions to keep.
+    #[serde(default = "default_max_sessions")]
+    pub max_sessions: u32,
+
+    /// Delete sessions older than this many days.
+    #[serde(default = "default_retention_days")]
+    pub retention_days: u32,
+
+    /// Enable automatic cleanup on startup.
+    #[serde(default = "default_auto_cleanup")]
+    pub auto_cleanup: bool,
+}
+
+fn default_max_sessions() -> u32 {
+    100
+}
+
+fn default_retention_days() -> u32 {
+    90
+}
+
+fn default_auto_cleanup() -> bool {
+    true
 }
 
 fn default_provider() -> String {
@@ -122,6 +154,17 @@ impl Default for Config {
             provider: default_provider(),
             api_key: None,
             model: default_model(),
+            session: None,
+        }
+    }
+}
+
+impl Default for SessionConfig {
+    fn default() -> Self {
+        Self {
+            max_sessions: default_max_sessions(),
+            retention_days: default_retention_days(),
+            auto_cleanup: default_auto_cleanup(),
         }
     }
 }
@@ -212,5 +255,55 @@ model = "gpt-4"
     fn test_load_from_nonexistent_file() {
         let result = Config::load_from("/nonexistent/path/config.toml");
         assert!(matches!(result, Err(ConfigError::IoError { .. })));
+    }
+
+    #[test]
+    fn test_session_config_defaults() {
+        let config = SessionConfig::default();
+        assert_eq!(config.max_sessions, 100);
+        assert_eq!(config.retention_days, 90);
+        assert!(config.auto_cleanup);
+    }
+
+    #[test]
+    fn test_config_without_session_section() {
+        let toml = r#"
+provider = "deepseek"
+model = "deepseek-chat"
+"#;
+        let config: Config = toml::from_str(toml).unwrap();
+        assert!(config.session.is_none());
+    }
+
+    #[test]
+    fn test_config_with_session_section() {
+        let toml = r#"
+provider = "deepseek"
+model = "deepseek-chat"
+
+[session]
+max_sessions = 50
+retention_days = 30
+auto_cleanup = false
+"#;
+        let config: Config = toml::from_str(toml).unwrap();
+        assert!(config.session.is_some());
+        let session = config.session.unwrap();
+        assert_eq!(session.max_sessions, 50);
+        assert_eq!(session.retention_days, 30);
+        assert!(!session.auto_cleanup);
+    }
+
+    #[test]
+    fn test_session_config_partial_defaults() {
+        let toml = r#"
+[session]
+max_sessions = 200
+"#;
+        let config: Config = toml::from_str(toml).unwrap();
+        let session = config.session.unwrap();
+        assert_eq!(session.max_sessions, 200);
+        assert_eq!(session.retention_days, 90); // default
+        assert!(session.auto_cleanup); // default
     }
 }

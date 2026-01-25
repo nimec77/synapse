@@ -10,7 +10,9 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1"
+chrono = "0.4"
 clap = { version = "4.5.54", features = ["derive"] }
 synapse-core = { path = "../synapse-core" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std", "signal"] }
 futures = "0.3"
+uuid = { version = "1", features = ["v4"] }
