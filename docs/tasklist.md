@@ -102,11 +102,11 @@
 
 **Goal:** Default provider works out of the box.
 
-- [ ] 6.1 Create `synapse-core/src/provider/deepseek.rs` with `DeepSeekProvider`
-- [ ] 6.2 Implement OpenAI-compatible chat/completions API request
-- [ ] 6.3 Create `synapse-core/src/provider/factory.rs` with provider selection
-- [ ] 6.4 Update CLI to use factory based on `config.provider`
-- [ ] 6.5 Support `DEEPSEEK_API_KEY` environment variable
+- [x] 6.1 Create `synapse-core/src/provider/deepseek.rs` with `DeepSeekProvider`
+- [x] 6.2 Implement OpenAI-compatible chat/completions API request
+- [x] 6.3 Create `synapse-core/src/provider/factory.rs` with provider selection
+- [x] 6.4 Update CLI to use factory based on `config.provider`
+- [x] 6.5 Support `DEEPSEEK_API_KEY` environment variable
 
 **Test:** `synapse "Hello"` with default config uses DeepSeek API.
 
@@ -118,7 +118,7 @@
 
 - [ ] 7.1 Add `eventsource-stream`, `async-stream`, `futures` to core
 - [ ] 7.2 Create `synapse-core/src/provider/streaming.rs` with `StreamEvent` enum
-- [ ] 7.3 Implement SSE parsing in `AnthropicProvider::stream()` method
+- [ ] 7.3 Implement SSE parsing in `DeepSeekProvider::stream()` method
 - [ ] 7.4 Update CLI to print tokens as they arrive
 
 **Test:** `synapse "Count to 5"` shows numbers appearing progressively.
