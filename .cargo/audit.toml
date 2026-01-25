@@ -1,0 +1,9 @@
+# Audit configuration for cargo-audit
+# https://docs.rs/cargo-audit/latest/cargo_audit/config/
+
+[advisories]
+# Ignore RUSTSEC-2023-0071 (rsa crate timing sidechannel)
+# Reason: rsa is a transitive dependency of sqlx-mysql, which we don't use.
+# We only use SQLite. The vulnerability requires network timing observation
+# which is not applicable to our use case.
+ignore = ["RUSTSEC-2023-0071"]
