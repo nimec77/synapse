@@ -4,13 +4,13 @@
 
 ## Tasks
 
-- [ ] 8.1 Create `synapse-core/src/session.rs` with `Session` struct
-- [ ] 8.2 Create `synapse-core/src/storage.rs` with `SessionStore` trait
-- [ ] 8.3 Add `sqlx` (sqlite feature), create `storage/database.rs`
-- [ ] 8.4 Implement schema migrations (sessions + messages tables)
-- [ ] 8.5 Wire storage into CLI: save messages after each exchange
-- [ ] 8.6 Implement session limits (max sessions, retention period)
-- [ ] 8.7 Add automatic cleanup job for expired sessions
+- [x] 8.1 Create `synapse-core/src/session.rs` with `Session` struct
+- [x] 8.2 Create `synapse-core/src/storage.rs` with `SessionStore` trait
+- [x] 8.3 Add `sqlx` (sqlite feature), create `storage/database.rs`
+- [x] 8.4 Implement schema migrations (sessions + messages tables)
+- [x] 8.5 Wire storage into CLI: save messages after each exchange
+- [x] 8.6 Implement session limits (max sessions, retention period)
+- [x] 8.7 Add automatic cleanup job for expired sessions
 
 ## Acceptance Criteria
 
