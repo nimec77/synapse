@@ -33,11 +33,11 @@ pub struct Session {
 impl Session {
     /// Create a new session with the given provider and model.
     ///
-    /// Generates a new UUID and sets timestamps to current time.
+    /// Generates a new UUID v7 (time-sortable) and sets timestamps to current time.
     pub fn new(provider: impl Into<String>, model: impl Into<String>) -> Self {
         let now = Utc::now();
         Self {
-            id: Uuid::new_v4(),
+            id: Uuid::now_v7(),
             name: None,
             provider: provider.into(),
             model: model.into(),
@@ -104,9 +104,11 @@ pub struct StoredMessage {
 
 impl StoredMessage {
     /// Create a new stored message.
+    ///
+    /// Generates a UUID v7 (time-sortable) for the message ID.
     pub fn new(session_id: Uuid, role: Role, content: impl Into<String>) -> Self {
         Self {
-            id: Uuid::new_v4(),
+            id: Uuid::now_v7(),
             session_id,
             role,
             content: content.into(),

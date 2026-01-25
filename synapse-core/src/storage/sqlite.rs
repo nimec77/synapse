@@ -380,24 +380,35 @@ impl SessionStore for SqliteStore {
 
 /// Create a storage backend from database URL.
 ///
-/// Defaults to `sqlite:~/.config/synapse/sessions.db` if no URL provided.
+/// URL resolution priority:
+/// 1. `DATABASE_URL` environment variable (highest priority)
+/// 2. `config_database_url` parameter (from config.toml `session.database_url`)
+/// 3. Default: `sqlite:~/.config/synapse/sessions.db`
 ///
 /// # Errors
 ///
 /// Returns [`StorageError`] if storage creation fails.
 pub async fn create_storage(
-    database_url: Option<&str>,
+    config_database_url: Option<&str>,
 ) -> Result<Box<dyn SessionStore>, StorageError> {
-    let url = match database_url {
-        Some(url) => url.to_string(),
-        None => {
-            let config_dir = dirs::home_dir()
-                .ok_or_else(|| {
-                    StorageError::Database("could not determine home directory".to_string())
-                })?
-                .join(".config/synapse");
+    // Priority 1: DATABASE_URL environment variable
+    let url = match std::env::var("DATABASE_URL") {
+        Ok(url) => url,
+        Err(_) => {
+            // Priority 2: config.toml session.database_url
+            match config_database_url {
+                Some(url) => url.to_string(),
+                // Priority 3: Default path
+                None => {
+                    let config_dir = dirs::home_dir()
+                        .ok_or_else(|| {
+                            StorageError::Database("could not determine home directory".to_string())
+                        })?
+                        .join(".config/synapse");
 
-            format!("sqlite:{}", config_dir.join("sessions.db").display())
+                    format!("sqlite:{}", config_dir.join("sessions.db").display())
+                }
+            }
         }
     };
 
@@ -681,6 +692,7 @@ mod tests {
 
         // Run cleanup with max_sessions = 3
         let config = SessionConfig {
+            database_url: None,
             max_sessions: 3,
             retention_days: 365, // Don't delete by retention
             auto_cleanup: true,
@@ -714,6 +726,7 @@ mod tests {
 
         // Run cleanup with max_sessions = 10 (under limit)
         let config = SessionConfig {
+            database_url: None,
             max_sessions: 10,
             retention_days: 365,
             auto_cleanup: true,
@@ -741,6 +754,7 @@ mod tests {
 
         // Cleanup with max_sessions = 1
         let config = SessionConfig {
+            database_url: None,
             max_sessions: 1,
             retention_days: 365,
             auto_cleanup: true,

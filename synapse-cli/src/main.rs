@@ -73,13 +73,13 @@ async fn main() -> Result<()> {
         }
     };
 
-    // Create storage
-    let storage = create_storage(None)
+    // Create storage with config database_url
+    let session_config = config.session.clone().unwrap_or_default();
+    let storage = create_storage(session_config.database_url.as_deref())
         .await
         .context("Failed to create storage")?;
 
     // Run auto-cleanup if enabled
-    let session_config = config.session.clone().unwrap_or_default();
     if session_config.auto_cleanup {
         let _ = storage.cleanup(&session_config).await;
     }
@@ -178,7 +178,9 @@ async fn main() -> Result<()> {
 
 /// Handle session management subcommands.
 async fn handle_command(command: Commands) -> Result<()> {
-    let storage = create_storage(None)
+    let config = Config::load().unwrap_or_default();
+    let session_config = config.session.unwrap_or_default();
+    let storage = create_storage(session_config.database_url.as_deref())
         .await
         .context("Failed to create storage")?;
 

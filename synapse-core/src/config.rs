@@ -53,6 +53,15 @@ pub struct Config {
 /// Session storage configuration.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct SessionConfig {
+    /// Database URL for session storage.
+    ///
+    /// Priority order:
+    /// 1. `DATABASE_URL` environment variable (highest priority)
+    /// 2. This field (`session.database_url` in config.toml)
+    /// 3. Default: `sqlite:~/.config/synapse/sessions.db`
+    #[serde(default)]
+    pub database_url: Option<String>,
+
     /// Maximum number of sessions to keep.
     #[serde(default = "default_max_sessions")]
     pub max_sessions: u32,
@@ -162,6 +171,7 @@ impl Default for Config {
 impl Default for SessionConfig {
     fn default() -> Self {
         Self {
+            database_url: None,
             max_sessions: default_max_sessions(),
             retention_days: default_retention_days(),
             auto_cleanup: default_auto_cleanup(),
@@ -260,6 +270,7 @@ model = "gpt-4"
     #[test]
     fn test_session_config_defaults() {
         let config = SessionConfig::default();
+        assert_eq!(config.database_url, None);
         assert_eq!(config.max_sessions, 100);
         assert_eq!(config.retention_days, 90);
         assert!(config.auto_cleanup);
@@ -305,5 +316,21 @@ max_sessions = 200
         assert_eq!(session.max_sessions, 200);
         assert_eq!(session.retention_days, 90); // default
         assert!(session.auto_cleanup); // default
+    }
+
+    #[test]
+    fn test_session_config_with_database_url() {
+        let toml = r#"
+[session]
+database_url = "sqlite:/custom/path/sessions.db"
+max_sessions = 50
+"#;
+        let config: Config = toml::from_str(toml).unwrap();
+        let session = config.session.unwrap();
+        assert_eq!(
+            session.database_url,
+            Some("sqlite:/custom/path/sessions.db".to_string())
+        );
+        assert_eq!(session.max_sessions, 50);
     }
 }
