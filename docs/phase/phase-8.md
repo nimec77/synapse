@@ -25,15 +25,29 @@
 ### Session Storage Config
 
 From `config.example.toml`:
+- `database_url`: Database connection URL (optional, env var takes priority)
 - `max_sessions`: Maximum number of sessions to keep (default: 100)
 - `retention_days`: Delete sessions older than this (default: 90)
 - `auto_cleanup`: Enable automatic cleanup (default: true)
+
+### Database URL Resolution
+
+Priority order:
+1. `DATABASE_URL` environment variable (highest priority)
+2. `session.database_url` in config.toml
+3. Default: `sqlite:~/.config/synapse/sessions.db`
+
+### Session IDs
+
+- UUID v8 (RFC 9562) - modern replacement for v4
+- Allows timestamp prefix for sortability
+- Maintains universally unique properties
 
 ### Database Schema
 
 Sessions and messages tables as defined in `docs/vision.md`:
 - SQLite default at `~/.config/synapse/sessions.db`
-- Configurable to PostgreSQL/MySQL via `DATABASE_URL`
+- Configurable to PostgreSQL/MySQL via DATABASE_URL or config
 
 ### Cleanup Behavior
 

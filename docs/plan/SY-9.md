@@ -91,6 +91,7 @@ pub struct StoredMessage {
 /// Session storage configuration.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct SessionConfig {
+    pub database_url: Option<String>, // Override database location
     #[serde(default = "default_max_sessions")]
     pub max_sessions: u32,           // default: 100
     #[serde(default = "default_retention_days")]
@@ -233,7 +234,7 @@ User runs: synapse "Hello"
 [CLI] If auto_cleanup enabled, run cleanup
      |
      v
-[CLI] Create new Session (UUID v4, provider, model from config)
+[CLI] Create new Session (UUID v8, provider, model from config)
      |
      v
 [Storage] INSERT session into database
@@ -493,14 +494,14 @@ CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at);
 
 ```toml
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] }
-uuid = { version = "1", features = ["v4", "serde"] }
+uuid = { version = "1", features = ["v8", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 ```
 
 ### New Dependencies for synapse-cli/Cargo.toml
 
 ```toml
-uuid = { version = "1", features = ["v4"] }
+uuid = { version = "1", features = ["v8"] }
 ```
 
 ### Development Tool
@@ -552,7 +553,7 @@ synapse sessions delete <id>
 None - all questions resolved during research phase:
 
 1. **SQL Mode**: Compile-time checked queries (resolved)
-2. **Session ID Format**: UUID v4 (resolved)
+2. **Session ID Format**: UUID v8 (resolved)
 3. **Default Behavior**: New session (resolved)
 
 ---

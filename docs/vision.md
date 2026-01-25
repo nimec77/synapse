@@ -246,6 +246,7 @@ synapse/
 ┌─────────────────────────────────────────┐
 │        SessionStorageConfig             │
 ├─────────────────────────────────────────┤
+│ database_url: Option<String>            │  // e.g., "sqlite:./custom.db"
 │ max_sessions: Option<u32>               │  // e.g., 100
 │ retention_days: Option<u32>             │  // e.g., 90
 │ auto_cleanup: bool                      │  // default: true
@@ -523,7 +524,7 @@ cargo build --release
 | `SYNAPSE_CONFIG` | Config file path | Platform default |
 | `SYNAPSE_MCP_CONFIG` | MCP servers JSON file path | `~/.config/synapse/mcp_servers.json` |
 | `SYNAPSE_LOG` | Log level | `info` |
-| `DATABASE_URL` | Database connection string | `sqlite:~/.config/synapse/sessions.db` |
+| `DATABASE_URL` | Database connection string (env var takes priority over config) | `sqlite:~/.config/synapse/sessions.db` |
 | `DEEPSEEK_API_KEY` | DeepSeek API key | From config |
 | `ANTHROPIC_API_KEY` | Claude API key | From config |
 | `OPENAI_API_KEY` | OpenAI API key | From config |
