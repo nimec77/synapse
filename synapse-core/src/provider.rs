@@ -4,9 +4,13 @@
 //! must fulfill, and the [`ProviderError`] type for error handling.
 
 mod anthropic;
+mod deepseek;
+mod factory;
 mod mock;
 
 pub use anthropic::AnthropicProvider;
+pub use deepseek::DeepSeekProvider;
+pub use factory::create_provider;
 pub use mock::MockProvider;
 
 use async_trait::async_trait;
@@ -30,6 +34,14 @@ pub enum ProviderError {
     /// Authentication failed (e.g., invalid API key).
     #[error("authentication failed: {0}")]
     AuthenticationError(String),
+
+    /// API key not configured.
+    #[error("missing API key: {0}")]
+    MissingApiKey(String),
+
+    /// Unknown provider name in configuration.
+    #[error("unknown provider: {0}")]
+    UnknownProvider(String),
 }
 
 /// Trait for LLM providers.
