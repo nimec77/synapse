@@ -79,7 +79,7 @@ Rather than using existing libraries (rig, genai, async-openai), the LLM provide
                     ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
                     │   Adapters   │  │   Adapters   │  │   Adapters   │
                     │              │  │              │  │              │
-                    │ Claude/OpenAI│  │   Database   │  │  MCP Server  │
+                    │DeepSeek/Claude│  │   Database   │  │  MCP Server  │
                     └──────────────┘  └──────────────┘  └──────────────┘
 ```
 
@@ -202,6 +202,7 @@ synapse/
 
 | Integration | Protocol | Purpose |
 |-------------|----------|---------|
+| DeepSeek API | HTTPS REST + SSE | DeepSeek models (default) |
 | Anthropic API | HTTPS REST + SSE | Claude LLM provider |
 | OpenAI API | HTTPS REST + SSE | GPT models |
 | MCP Servers | JSON-RPC over stdio/SSE | Tool execution |
@@ -509,6 +510,7 @@ cargo build --release
 | `SYNAPSE_MCP_CONFIG` | MCP servers JSON file path | `~/.config/synapse/mcp_servers.json` |
 | `SYNAPSE_LOG` | Log level | `info` |
 | `DATABASE_URL` | Database connection string | `sqlite:~/.config/synapse/sessions.db` |
+| `DEEPSEEK_API_KEY` | DeepSeek API key | From config |
 | `ANTHROPIC_API_KEY` | Claude API key | From config |
 | `OPENAI_API_KEY` | OpenAI API key | From config |
 

@@ -11,7 +11,7 @@ Develop an AI agent in Rust that receives messages from users and responds to th
 
 ## Core Functionality
 
-- **Multi-provider LLM support**: Support for various LLM providers (Anthropic Claude, OpenAI, etc.) configured via the config file, where the user specifies the provider's API endpoint and API key
+- **Multi-provider LLM support**: Support for various LLM providers (DeepSeek, Anthropic Claude, OpenAI, etc.) configured via the config file, where the user specifies the provider's API endpoint and API key
 - **Session-based conversation memory**: Maintain conversation context within a session for coherent multi-turn dialogues
 - **Text-based I/O**: Simple text input and output for straightforward interaction
 - **Configuration system**: TOML-based configuration file for storing API keys, default provider, and user preferences

@@ -19,12 +19,13 @@
 | 3. Configuration | ✅ Complete | 4/4 |
 | 4. Provider Abstraction (SY-5) | ✅ Complete | 3/3 |
 | 5. Anthropic Provider (SY-6) | ✅ Complete | 5/5 |
-| 6. Streaming Responses | ⬜ Not Started | 0/4 |
-| 7. Session Storage | ⬜ Not Started | 0/5 |
-| 8. CLI REPL | ⬜ Not Started | 0/4 |
-| 9. Multi-Provider | ⬜ Not Started | 0/3 |
-| 10. MCP Integration | ⬜ Not Started | 0/5 |
-| 11. Telegram Bot | ⬜ Not Started | 0/4 |
+| 6. DeepSeek Provider (SY-7) | ⬜ Not Started | 0/5 |
+| 7. Streaming Responses | ⬜ Not Started | 0/4 |
+| 8. Session Storage | ⬜ Not Started | 0/5 |
+| 9. CLI REPL | ⬜ Not Started | 0/4 |
+| 10. OpenAI Provider | ⬜ Not Started | 0/3 |
+| 11. MCP Integration | ⬜ Not Started | 0/5 |
+| 12. Telegram Bot | ⬜ Not Started | 0/4 |
 
 **Legend:** ⬜ Not Started | 🔄 In Progress | ✅ Complete | ⏸️ Blocked
 
@@ -97,82 +98,96 @@
 
 ---
 
-## Phase 6: Streaming Responses
+## Phase 6: DeepSeek Provider
+
+**Goal:** Default provider works out of the box.
+
+- [ ] 6.1 Create `synapse-core/src/provider/deepseek.rs` with `DeepSeekProvider`
+- [ ] 6.2 Implement OpenAI-compatible chat/completions API request
+- [ ] 6.3 Create `synapse-core/src/provider/factory.rs` with provider selection
+- [ ] 6.4 Update CLI to use factory based on `config.provider`
+- [ ] 6.5 Support `DEEPSEEK_API_KEY` environment variable
+
+**Test:** `synapse "Hello"` with default config uses DeepSeek API.
+
+---
+
+## Phase 7: Streaming Responses
 
 **Goal:** Token-by-token output to terminal.
 
-- [ ] 6.1 Add `eventsource-stream`, `async-stream`, `futures` to core
-- [ ] 6.2 Create `synapse-core/src/provider/streaming.rs` with `StreamEvent` enum
-- [ ] 6.3 Implement SSE parsing in `AnthropicProvider::stream()` method
-- [ ] 6.4 Update CLI to print tokens as they arrive
+- [ ] 7.1 Add `eventsource-stream`, `async-stream`, `futures` to core
+- [ ] 7.2 Create `synapse-core/src/provider/streaming.rs` with `StreamEvent` enum
+- [ ] 7.3 Implement SSE parsing in `AnthropicProvider::stream()` method
+- [ ] 7.4 Update CLI to print tokens as they arrive
 
 **Test:** `synapse "Count to 5"` shows numbers appearing progressively.
 
 ---
 
-## Phase 7: Session Storage
+## Phase 8: Session Storage
 
 **Goal:** Persist conversations to SQLite.
 
-- [ ] 7.1 Create `synapse-core/src/session.rs` with `Session` struct
-- [ ] 7.2 Create `synapse-core/src/storage.rs` with `SessionStore` trait
-- [ ] 7.3 Add `sqlx` (sqlite feature), create `storage/database.rs`
-- [ ] 7.4 Implement schema migrations (sessions + messages tables)
-- [ ] 7.5 Wire storage into CLI: save messages after each exchange
+- [ ] 8.1 Create `synapse-core/src/session.rs` with `Session` struct
+- [ ] 8.2 Create `synapse-core/src/storage.rs` with `SessionStore` trait
+- [ ] 8.3 Add `sqlx` (sqlite feature), create `storage/database.rs`
+- [ ] 8.4 Implement schema migrations (sessions + messages tables)
+- [ ] 8.5 Wire storage into CLI: save messages after each exchange
 
 **Test:** `synapse sessions list` shows previous conversations.
 
 ---
 
-## Phase 8: CLI REPL
+## Phase 9: CLI REPL
 
 **Goal:** Interactive chat mode.
 
-- [ ] 8.1 Add `ratatui` + `crossterm` to CLI
-- [ ] 8.2 Create `synapse-cli/src/repl.rs` with input loop
-- [ ] 8.3 Implement `--repl` flag to enter interactive mode
-- [ ] 8.4 Add session resume: `synapse --repl --session <id>`
+- [ ] 9.1 Add `ratatui` + `crossterm` to CLI
+- [ ] 9.2 Create `synapse-cli/src/repl.rs` with input loop
+- [ ] 9.3 Implement `--repl` flag to enter interactive mode
+- [ ] 9.4 Add session resume: `synapse --repl --session <id>`
 
 **Test:** `synapse --repl` allows multi-turn conversation with history.
 
 ---
 
-## Phase 9: Multi-Provider
+## Phase 10: OpenAI Provider
 
-**Goal:** Support OpenAI alongside Anthropic.
+**Goal:** Support OpenAI alongside DeepSeek and Anthropic.
 
-- [ ] 9.1 Create `synapse-core/src/provider/openai.rs` implementing `LlmProvider`
-- [ ] 9.2 Add provider selection in config and CLI flag (`-p openai`)
-- [ ] 9.3 Implement provider factory based on config
+- [ ] 10.1 Create `synapse-core/src/provider/openai.rs` implementing `LlmProvider`
+- [ ] 10.2 Add provider selection in config and CLI flag (`-p openai`)
+- [ ] 10.3 Implement streaming for OpenAI API
 
-**Test:** `synapse -p openai "Hello"` uses GPT, default uses Claude.
+**Test:** `synapse -p openai "Hello"` uses GPT, default uses DeepSeek.
 
 ---
 
-## Phase 10: MCP Integration
+## Phase 11: MCP Integration
 
 **Goal:** Tool calling via Model Context Protocol.
 
-- [ ] 10.1 Add `rmcp` dependency to core
-- [ ] 10.2 Create `synapse-core/src/mcp.rs` with `McpClient` struct
-- [ ] 10.3 Load MCP server configs from `mcp_servers.json`
-- [ ] 10.4 Implement tool discovery and registration
-- [ ] 10.5 Handle tool calls in agent loop: detect → execute → return result
+- [ ] 11.1 Add `rmcp` dependency to core
+- [ ] 11.2 Create `synapse-core/src/mcp.rs` with `McpClient` struct
+- [ ] 11.3 Load MCP server configs from `mcp_servers.json`
+- [ ] 11.4 Implement tool discovery and registration
+- [ ] 11.5 Handle tool calls in agent loop: detect → execute → return result
 
-**Test:** Configure a simple MCP server, ask Claude to use it.
+**Test:** Configure a simple MCP server, ask the LLM to use it.
 
 ---
 
-## Phase 11: Telegram Bot
+## Phase 12: Telegram Bot
 
 **Goal:** Second interface using shared core.
 
-- [ ] 11.1 Add `teloxide` to `synapse-telegram`
-- [ ] 11.2 Create bot initialization with token from config
-- [ ] 11.3 Implement message handler using `synapse-core` agent
-- [ ] 11.4 Add session-per-chat persistence
+- [ ] 12.1 Add `teloxide` to `synapse-telegram`
+- [ ] 12.2 Create bot initialization with token from config
+- [ ] 12.3 Implement message handler using `synapse-core` agent
+- [ ] 12.4 Add session-per-chat persistence
 
-**Test:** Send message to bot, receive Claude response.
+**Test:** Send message to bot, receive LLM response.
 
 ---
 
