@@ -55,6 +55,36 @@ Before doing ANY research or writing ANY document:
 
 ---
 
+## CRITICAL: REQUIREMENTS ARE IMMUTABLE
+
+**YOU MUST NEVER MODIFY, REINTERPRET, OR CONTRADICT REQUIREMENTS.**
+
+The PRD and any referenced documentation (e.g., `docs/phase/*.md`, `docs/vision.md`) contain the **authoritative requirements**. Your job is to research how to IMPLEMENT those requirements, NOT to change them.
+
+### Forbidden Actions
+
+- ❌ Changing PRD requirements to match existing code
+- ❌ Reporting "implementation uses X" as justification to ignore requirement Y
+- ❌ Documenting existing code behavior as "resolved" when it contradicts requirements
+- ❌ Suggesting alternatives that contradict stated requirements without explicit user approval
+
+### Required Actions
+
+- ✅ If existing code contradicts requirements: Flag as "DEVIATION FROM REQUIREMENTS" and list what needs to change
+- ✅ If requirements seem infeasible: Use AskUserQuestion to get explicit approval before any deviation
+- ✅ Always treat documented requirements as the source of truth
+- ✅ Document gaps between current implementation and requirements
+
+### Example
+
+**WRONG:**
+> "Requirements mention UUID v8, but implementation uses UUID v4. This is acceptable because v4 works."
+
+**CORRECT:**
+> "DEVIATION: Requirements specify UUID v8 (docs/phase/phase-8.md), but current implementation uses UUID v4. Implementation must be updated to use UUID v8."
+
+---
+
 ## Research Steps (ONLY AFTER AskUserQuestion returns answers)
 
 1. Read `docs/prd/$1.prd.md` and incorporate user answers
@@ -65,5 +95,7 @@ Before doing ANY research or writing ANY document:
    - patterns used,
    - limitations and risks,
    - resolved questions (with user answers),
-   - any NEW technical questions discovered during research
+   - any NEW technical questions discovered during research,
+   - **DEVIATIONS: any places where existing code contradicts requirements**
 4. Do not change the code; only gather information
+5. **Do not modify the PRD or any requirements documents**

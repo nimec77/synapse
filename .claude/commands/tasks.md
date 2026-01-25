@@ -19,13 +19,33 @@ If the ticket ID is not provided as a parameter (`$1` is empty):
 Before proceeding, read `docs/plan/$1.md` and verify it contains `Status: PLAN_APPROVED`.
 If the status is not `PLAN_APPROVED`, display an error message: "Error: Plan for ticket $1 is not approved. Run /plan to create and approve the plan first." and terminate immediately.
 
+## CRITICAL: REQUIREMENTS ARE IMMUTABLE
+
+**Tasks must implement what the PRD and plan specify, not what existing code does.**
+
+### Forbidden Actions
+
+- ❌ Marking tasks as "complete" because existing code does something similar
+- ❌ Omitting tasks needed to fix deviations from requirements
+- ❌ Creating acceptance criteria that contradict the PRD
+
+### Required Actions
+
+- ✅ If the plan identifies deviations, create tasks to fix them
+- ✅ Acceptance criteria must match PRD requirements exactly
+- ✅ All requirements from the plan must have corresponding tasks
+
+---
+
 ## Tasks Steps
 
 1. Read:
 - `docs/prd/$1.prd.md`,
 - `docs/plan/$1.md`.
-2. Create `docs/tasklist/$1.md`:
+2. Check if the plan identifies any **deviations to fix** — these MUST become tasks
+3. Create `docs/tasklist/$1.md`:
 - title and brief context,
 - a list of tasks with `- [ ]`,
-- for each task, 1-2 acceptance criteria.
-3. If the tasklist looks complete and covers the plan, set `Status: TASKLIST_READY`.
+- for each task, 1-2 acceptance criteria **that match the PRD requirements**.
+4. **Do NOT mark tasks as complete just because code exists.** Code must match requirements.
+5. If the tasklist looks complete and covers the plan, set `Status: TASKLIST_READY`.

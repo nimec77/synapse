@@ -14,6 +14,27 @@ If the ticket ID is not provided as a parameter (`$1` is empty):
 
 ---
 
+## CRITICAL: REQUIREMENTS ARE IMMUTABLE
+
+**Agents MUST implement code according to the requirements in the PRD and plan.**
+
+The code-writer and test-writer agents are NOT permitted to:
+- ❌ Modify requirements documents (PRD, plan, phase docs)
+- ❌ Skip implementing a requirement because existing code "works differently"
+- ❌ Justify deviations from requirements
+- ❌ Mark tasks complete when implementation doesn't match requirements
+
+The agents MUST:
+- ✅ Implement exactly what the task acceptance criteria specify
+- ✅ Modify existing code if it doesn't match requirements
+- ✅ Report deviations that cannot be fixed (use AskUserQuestion for guidance)
+- ✅ Ensure tests verify the requirements, not just existing behavior
+
+**When invoking agents, explicitly remind them:**
+> "Implement according to the requirements. If existing code contradicts requirements, modify the code to match requirements."
+
+---
+
 ## Orchestrator Workflow
 
 You are an orchestrator that coordinates code-writer and test-writer agents to implement tasks safely and systematically. Process all tasks to completion automatically, showing progress as you go.
@@ -146,12 +167,14 @@ If verification passed:
 
 ## Agent Invocation
 
-Use the Task tool to invoke agents:
+Use the Task tool to invoke agents. **Always include the requirements reminder.**
 
 ```
 Task(
   subagent_type: "code-writer",
-  prompt: "Implement [task description]. Files: [list]. Follow docs/conventions.md.",
+  prompt: "Implement [task description]. Files: [list]. Follow docs/conventions.md.
+
+  CRITICAL: Implement according to the requirements in the PRD and plan. If existing code contradicts requirements, modify the code to match requirements. Do NOT modify requirements documents. Do NOT skip requirements because existing code 'works differently'.",
   description: "Implement [brief task name]"
 )
 ```
@@ -159,7 +182,9 @@ Task(
 ```
 Task(
   subagent_type: "test-writer",
-  prompt: "Write tests for [description]. Test files: [list]. Follow docs/conventions.md.",
+  prompt: "Write tests for [description]. Test files: [list]. Follow docs/conventions.md.
+
+  CRITICAL: Tests must verify the requirements from the PRD/plan, not just existing behavior. If existing code doesn't match requirements, the tests should expect the REQUIRED behavior, not the current behavior.",
   description: "Write tests for [brief task name]"
 )
 ```
