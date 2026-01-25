@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **SY-8: Streaming Responses** - Token-by-token output for real-time response display:
+  - `StreamEvent` enum with `TextDelta`, `ToolCall`, `ToolResult`, `Done`, `Error` variants
+  - `stream()` method added to `LlmProvider` trait with object-safe return type
+  - DeepSeek SSE streaming via `eventsource-stream` and `async_stream` crates
+  - CLI prints tokens progressively with `print!()` and `stdout.flush()`
+  - Graceful Ctrl+C interruption via `tokio::select!` with `tokio::signal::ctrl_c()`
+  - `[Interrupted]` message on Ctrl+C, clean exit
+  - AnthropicProvider fallback streaming (wraps `complete()` for non-progressive output)
+  - MockProvider `with_stream_tokens()` for testing streaming behavior
+  - 12 unit tests for StreamEvent, SSE parsing, and provider streaming
+  - Dependencies: `eventsource-stream = "0.2"`, `async-stream = "0.3"`, `futures = "0.3"`, reqwest `stream` feature, tokio `signal` and `io-std` features
+
 - **SY-7: DeepSeek Provider** - Default LLM provider with provider factory:
   - `DeepSeekProvider` implementing `LlmProvider` trait for DeepSeek's OpenAI-compatible Chat Completions API
   - Provider factory pattern with `create_provider(config)` for dynamic provider selection

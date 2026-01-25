@@ -9,6 +9,7 @@
 | SY-1 | Project Foundation | ✅ Complete |
 | SY-2 | CI/CD Pipeline | ✅ Complete |
 | SY-3 | Echo CLI | ✅ Complete |
+| SY-8 | Streaming Responses | ✅ Complete |
 
 ### Feature Phases
 
@@ -20,7 +21,7 @@
 | 4. Provider Abstraction (SY-5) | ✅ Complete | 3/3 |
 | 5. Anthropic Provider (SY-6) | ✅ Complete | 5/5 |
 | 6. DeepSeek Provider (SY-7) | ✅ Complete | 5/5 |
-| 7. Streaming Responses | ⬜ Not Started | 0/4 |
+| 7. Streaming Responses (SY-8) | ✅ Complete | 4/4 |
 | 8. Session Storage | ⬜ Not Started | 0/5 |
 | 9. CLI REPL | ⬜ Not Started | 0/4 |
 | 10. OpenAI Provider | ⬜ Not Started | 0/3 |
@@ -29,7 +30,7 @@
 
 **Legend:** ⬜ Not Started | 🔄 In Progress | ✅ Complete | ⏸️ Blocked
 
-**Current Phase:** 7
+**Current Phase:** 8
 **Last Updated:** 2026-01-25
 
 ---
@@ -116,10 +117,10 @@
 
 **Goal:** Token-by-token output to terminal.
 
-- [ ] 7.1 Add `eventsource-stream`, `async-stream`, `futures` to core
-- [ ] 7.2 Create `synapse-core/src/provider/streaming.rs` with `StreamEvent` enum
-- [ ] 7.3 Implement SSE parsing in `DeepSeekProvider::stream()` method
-- [ ] 7.4 Update CLI to print tokens as they arrive
+- [x] 7.1 Add `eventsource-stream`, `async-stream`, `futures` to core
+- [x] 7.2 Create `synapse-core/src/provider/streaming.rs` with `StreamEvent` enum
+- [x] 7.3 Implement SSE parsing in `DeepSeekProvider::stream()` method
+- [x] 7.4 Update CLI to print tokens as they arrive
 
 **Test:** `synapse "Count to 5"` shows numbers appearing progressively.
 

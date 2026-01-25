@@ -181,3 +181,4 @@ This creates a PRD in `docs/prd/SY-<N>.prd.md` and sets `docs/.active_ticket`.
 | SY-5 | Provider Abstraction | LlmProvider trait, Message/Role types, MockProvider |
 | SY-6 | Anthropic Provider | AnthropicProvider with Claude API, async CLI with tokio |
 | SY-7 | DeepSeek Provider | DeepSeekProvider with OpenAI-compatible API, provider factory pattern |
+| SY-8 | Streaming Responses | Token-by-token streaming via SSE, DeepSeekProvider streaming, Ctrl+C handling |
