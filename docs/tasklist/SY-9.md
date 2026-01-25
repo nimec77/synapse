@@ -1,6 +1,6 @@
 # Tasklist: SY-9 - Phase 8: Session Storage
 
-Status: TASKLIST_READY
+Status: IMPLEMENT_STEP_OK
 
 ## Context
 
@@ -8,45 +8,45 @@ Phase 8 implements persistent conversation storage using SQLite. Based on code a
 
 ## Tasks
 
-- [ ] 8.1 Verify Session struct implementation
+- [x] 8.1 Verify Session struct implementation
   - Acceptance: `Session`, `SessionSummary`, `StoredMessage` structs exist in `synapse-core/src/session.rs` with proper fields (id, name, provider, model, system_prompt, timestamps)
   - Acceptance: Unit tests pass for session creation and builder methods
 
-- [ ] 8.2 Verify SessionStore trait implementation
+- [x] 8.2 Verify SessionStore trait implementation
   - Acceptance: `SessionStore` trait exists in `synapse-core/src/storage.rs` with CRUD methods (create_session, get_session, list_sessions, touch_session, delete_session, add_message, get_messages, cleanup)
   - Acceptance: `StorageError` enum has variants: Database, NotFound, Migration, InvalidData
 
-- [ ] 8.3 Verify SQLite storage implementation
+- [x] 8.3 Verify SQLite storage implementation
   - Acceptance: `SqliteStore` in `synapse-core/src/storage/sqlite.rs` implements `SessionStore` trait
   - Acceptance: `create_storage(None)` defaults to `~/.config/synapse/sessions.db`
 
-- [ ] 8.4 Verify schema migrations
+- [x] 8.4 Verify schema migrations
   - Acceptance: Migration file exists at `synapse-core/migrations/20250125_001_initial.sql`
   - Acceptance: Schema has `sessions` and `messages` tables with proper indexes and CASCADE delete
 
-- [ ] 8.5 Verify CLI integration
+- [x] 8.5 Verify CLI integration
   - Acceptance: `synapse --session <uuid> "message"` continues an existing session
   - Acceptance: `synapse sessions list` displays all sessions
   - Acceptance: `synapse sessions show <uuid>` displays session messages
   - Acceptance: `synapse sessions delete <uuid>` removes session
 
-- [ ] 8.6 Verify session limits
+- [x] 8.6 Verify session limits
   - Acceptance: `SessionConfig` has `max_sessions` (default 100) and `retention_days` (default 90)
   - Acceptance: `cleanup()` method deletes sessions exceeding max_sessions limit
 
-- [ ] 8.7 Verify automatic cleanup
+- [x] 8.7 Verify automatic cleanup
   - Acceptance: CLI runs cleanup on startup when `auto_cleanup: true`
   - Acceptance: Sessions older than `retention_days` are purged
 
-- [ ] 8.8 Update docs/tasklist.md
+- [x] 8.8 Update docs/tasklist.md
   - Acceptance: Phase 8 tasks 8.1-8.7 marked as complete (`[x]`)
   - Acceptance: Progress table shows "Phase 8: Session Storage | ✅ Complete | 7/7"
 
-- [ ] 8.9 Update CHANGELOG.md
+- [x] 8.9 Update CHANGELOG.md
   - Acceptance: SY-9 entry added under `[Unreleased]` section
   - Acceptance: Entry lists: Session/SessionSummary/StoredMessage types, SessionStore trait, SqliteStore, migrations, CLI commands, cleanup
 
-- [ ] 8.10 Run integration tests
+- [x] 8.10 Run integration tests
   - Acceptance: `cargo test` passes for all session/storage tests
   - Acceptance: `cargo clippy` passes without warnings
 
