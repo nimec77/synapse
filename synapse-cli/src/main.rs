@@ -5,7 +5,7 @@ use std::io::{self, IsTerminal, Read};
 use anyhow::{Context, Result};
 use clap::Parser;
 
-use synapse_core::{AnthropicProvider, Config, LlmProvider, Message, Role};
+use synapse_core::{Config, Message, Role, create_provider};
 
 /// Synapse CLI - AI agent command-line interface
 #[derive(Parser)]
@@ -30,20 +30,15 @@ async fn main() -> Result<()> {
         }
     };
 
-    // Validate API key is present
-    let api_key = config
-        .api_key
-        .context("API key not configured. Add api_key to config.toml")?;
-
-    // Create provider
-    let provider = AnthropicProvider::new(api_key, &config.model);
+    // Create provider using factory (handles API key lookup)
+    let provider = create_provider(&config).context("Failed to create LLM provider")?;
 
     // Send request
     let messages = vec![Message::new(Role::User, message)];
     let response = provider
         .complete(&messages)
         .await
-        .context("Failed to get response from Claude")?;
+        .context("Failed to get response from LLM")?;
 
     println!("{}", response.content);
     Ok(())

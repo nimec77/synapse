@@ -1,0 +1,298 @@
+//! DeepSeek LLM provider.
+//!
+//! Implements the [`LlmProvider`] trait for DeepSeek's OpenAI-compatible
+//! Chat Completions API.
+
+use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
+
+use super::{LlmProvider, ProviderError};
+use crate::message::{Message, Role};
+
+/// Default max tokens for API responses.
+const DEFAULT_MAX_TOKENS: u32 = 1024;
+
+/// DeepSeek Chat Completions API endpoint.
+const API_ENDPOINT: &str = "https://api.deepseek.com/chat/completions";
+
+/// DeepSeek LLM provider.
+///
+/// Sends messages to the DeepSeek Chat Completions API (OpenAI-compatible)
+/// and returns responses.
+///
+/// # Examples
+///
+/// ```no_run
+/// use synapse_core::provider::{DeepSeekProvider, LlmProvider};
+/// use synapse_core::message::{Message, Role};
+///
+/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+/// let provider = DeepSeekProvider::new("sk-...", "deepseek-chat");
+/// let messages = vec![Message::new(Role::User, "Hello, DeepSeek!")];
+///
+/// let response = provider.complete(&messages).await?;
+/// println!("{}", response.content);
+/// # Ok(())
+/// # }
+/// ```
+pub struct DeepSeekProvider {
+    /// HTTP client for API requests.
+    client: reqwest::Client,
+    /// DeepSeek API key.
+    api_key: String,
+    /// Model identifier (e.g., "deepseek-chat").
+    model: String,
+}
+
+impl DeepSeekProvider {
+    /// Create a new DeepSeek provider.
+    ///
+    /// # Arguments
+    ///
+    /// * `api_key` - DeepSeek API key
+    /// * `model` - Model identifier (e.g., "deepseek-chat")
+    pub fn new(api_key: impl Into<String>, model: impl Into<String>) -> Self {
+        Self {
+            client: reqwest::Client::new(),
+            api_key: api_key.into(),
+            model: model.into(),
+        }
+    }
+}
+
+/// Request body for DeepSeek Chat Completions API (OpenAI-compatible).
+#[derive(Debug, Serialize)]
+struct ApiRequest {
+    /// Model identifier.
+    model: String,
+    /// Conversation messages (including system messages).
+    messages: Vec<ApiMessage>,
+    /// Maximum tokens to generate.
+    max_tokens: u32,
+}
+
+/// A single message in the API request.
+#[derive(Debug, Serialize)]
+struct ApiMessage {
+    /// Message role ("system", "user", or "assistant").
+    role: String,
+    /// Message content.
+    content: String,
+}
+
+/// Response body from DeepSeek Chat Completions API.
+#[derive(Debug, Deserialize)]
+struct ApiResponse {
+    /// Response choices.
+    choices: Vec<Choice>,
+}
+
+/// A choice in the API response.
+#[derive(Debug, Deserialize)]
+struct Choice {
+    /// The message content.
+    message: ChoiceMessage,
+}
+
+/// Message content in a choice.
+#[derive(Debug, Deserialize)]
+struct ChoiceMessage {
+    /// The generated content.
+    content: String,
+}
+
+/// Error response from DeepSeek API.
+#[derive(Debug, Deserialize)]
+struct ApiError {
+    /// Error details.
+    error: ErrorDetail,
+}
+
+/// Error detail from API error response.
+#[derive(Debug, Deserialize)]
+struct ErrorDetail {
+    /// Human-readable error message.
+    message: String,
+}
+
+#[async_trait]
+impl LlmProvider for DeepSeekProvider {
+    async fn complete(&self, messages: &[Message]) -> Result<Message, ProviderError> {
+        // Convert all messages to API format (system messages go in messages array)
+        let api_messages: Vec<ApiMessage> = messages
+            .iter()
+            .map(|m| ApiMessage {
+                role: match m.role {
+                    Role::System => "system".to_string(),
+                    Role::User => "user".to_string(),
+                    Role::Assistant => "assistant".to_string(),
+                },
+                content: m.content.clone(),
+            })
+            .collect();
+
+        let request = ApiRequest {
+            model: self.model.clone(),
+            messages: api_messages,
+            max_tokens: DEFAULT_MAX_TOKENS,
+        };
+
+        let response = self
+            .client
+            .post(API_ENDPOINT)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("Content-Type", "application/json")
+            .json(&request)
+            .send()
+            .await
+            .map_err(|e| ProviderError::RequestFailed(e.to_string()))?;
+
+        let status = response.status();
+
+        if status == reqwest::StatusCode::UNAUTHORIZED {
+            let error_body: ApiError = response.json().await.unwrap_or_else(|_| ApiError {
+                error: ErrorDetail {
+                    message: "Invalid API key".to_string(),
+                },
+            });
+            return Err(ProviderError::AuthenticationError(error_body.error.message));
+        }
+
+        if !status.is_success() {
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "unknown error".to_string());
+            return Err(ProviderError::RequestFailed(format!(
+                "HTTP {}: {}",
+                status, error_text
+            )));
+        }
+
+        let api_response: ApiResponse =
+            response
+                .json()
+                .await
+                .map_err(|e| ProviderError::ProviderError {
+                    message: format!("failed to parse response: {}", e),
+                })?;
+
+        // Extract content from first choice
+        let content = api_response
+            .choices
+            .first()
+            .map(|c| c.message.content.clone())
+            .unwrap_or_default();
+
+        Ok(Message::new(Role::Assistant, content))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_deepseek_provider_new() {
+        let provider = DeepSeekProvider::new("test-key", "test-model");
+
+        assert_eq!(provider.api_key, "test-key");
+        assert_eq!(provider.model, "test-model");
+    }
+
+    #[test]
+    fn test_api_request_serialization() {
+        let request = ApiRequest {
+            model: "deepseek-chat".to_string(),
+            messages: vec![ApiMessage {
+                role: "user".to_string(),
+                content: "Hello, DeepSeek".to_string(),
+            }],
+            max_tokens: 1024,
+        };
+
+        let json = serde_json::to_value(&request).unwrap();
+
+        assert_eq!(json["model"], "deepseek-chat");
+        assert_eq!(json["max_tokens"], 1024);
+        assert_eq!(json["messages"][0]["role"], "user");
+        assert_eq!(json["messages"][0]["content"], "Hello, DeepSeek");
+    }
+
+    #[test]
+    fn test_api_request_with_system_message() {
+        let request = ApiRequest {
+            model: "deepseek-chat".to_string(),
+            messages: vec![
+                ApiMessage {
+                    role: "system".to_string(),
+                    content: "You are a helpful assistant.".to_string(),
+                },
+                ApiMessage {
+                    role: "user".to_string(),
+                    content: "Hello".to_string(),
+                },
+            ],
+            max_tokens: 1024,
+        };
+
+        let json = serde_json::to_value(&request).unwrap();
+
+        // System message should be in messages array (not separate field)
+        assert_eq!(json["messages"][0]["role"], "system");
+        assert_eq!(
+            json["messages"][0]["content"],
+            "You are a helpful assistant."
+        );
+        assert_eq!(json["messages"][1]["role"], "user");
+        assert_eq!(json["messages"][1]["content"], "Hello");
+    }
+
+    #[test]
+    fn test_api_response_parsing() {
+        let json = r#"{
+            "id": "chatcmpl-123",
+            "object": "chat.completion",
+            "created": 1234567890,
+            "model": "deepseek-chat",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": "Hello! How can I help you today?"
+                    },
+                    "finish_reason": "stop"
+                }
+            ],
+            "usage": {
+                "prompt_tokens": 10,
+                "completion_tokens": 15,
+                "total_tokens": 25
+            }
+        }"#;
+
+        let response: ApiResponse = serde_json::from_str(json).unwrap();
+
+        assert_eq!(response.choices.len(), 1);
+        assert_eq!(
+            response.choices[0].message.content,
+            "Hello! How can I help you today?"
+        );
+    }
+
+    #[test]
+    fn test_api_error_parsing() {
+        let json = r#"{
+            "error": {
+                "message": "Incorrect API key provided",
+                "type": "invalid_request_error",
+                "code": "invalid_api_key"
+            }
+        }"#;
+
+        let error: ApiError = serde_json::from_str(json).unwrap();
+
+        assert_eq!(error.error.message, "Incorrect API key provided");
+    }
+}
