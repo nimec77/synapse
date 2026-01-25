@@ -1,6 +1,25 @@
 //! SQLite storage implementation.
 //!
 //! Provides [`SqliteStore`] as the default storage backend for session persistence.
+//!
+//! ## Database Initialization
+//!
+//! When [`create_storage`] is called, the following happens automatically:
+//!
+//! 1. **URL Resolution**: Database URL is determined by priority:
+//!    - `DATABASE_URL` environment variable
+//!    - `session.database_url` from config.toml
+//!    - Default: `sqlite:~/.config/synapse/sessions.db`
+//!
+//! 2. **Directory Creation**: Parent directory is created if missing
+//!
+//! 3. **Database Creation**: SQLite file is created if missing (via `create_if_missing(true)`)
+//!
+//! 4. **WAL Mode**: Write-Ahead Logging is enabled for better performance
+//!
+//! 5. **Migrations**: Schema migrations run automatically using sqlx's embedded migrations
+//!
+//! No manual setup is required - the database is ready on first use.
 
 use std::path::PathBuf;
 
