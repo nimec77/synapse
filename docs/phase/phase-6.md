@@ -9,11 +9,11 @@ Implement the DeepSeek LLM provider as the default provider for Synapse. DeepSee
 
 ## Tasks
 
-- [ ] 6.1 Create `synapse-core/src/provider/deepseek.rs` with `DeepSeekProvider`
-- [ ] 6.2 Implement OpenAI-compatible chat/completions API request
-- [ ] 6.3 Create `synapse-core/src/provider/factory.rs` with provider selection
-- [ ] 6.4 Update CLI to use factory based on `config.provider`
-- [ ] 6.5 Support `DEEPSEEK_API_KEY` environment variable
+- [x] 6.1 Create `synapse-core/src/provider/deepseek.rs` with `DeepSeekProvider`
+- [x] 6.2 Implement OpenAI-compatible chat/completions API request
+- [x] 6.3 Create `synapse-core/src/provider/factory.rs` with provider selection
+- [x] 6.4 Update CLI to use factory based on `config.provider`
+- [x] 6.5 Support `DEEPSEEK_API_KEY` environment variable
 
 ## Technical Details
 

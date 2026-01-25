@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **SY-7: DeepSeek Provider** - Default LLM provider with provider factory:
+  - `DeepSeekProvider` implementing `LlmProvider` trait for DeepSeek's OpenAI-compatible Chat Completions API
+  - Provider factory pattern with `create_provider(config)` for dynamic provider selection
+  - API key resolution with environment variable priority (`DEEPSEEK_API_KEY` > config file)
+  - `MissingApiKey` and `UnknownProvider` error variants added to `ProviderError`
+  - System messages included in messages array (OpenAI format, not separate field)
+  - Authorization via Bearer token header
+  - Default provider changed from hardcoded Anthropic to configuration-based selection
+  - CLI now uses factory to create provider based on `config.provider` setting
+  - 13 unit tests for DeepSeekProvider (5) and provider factory (8)
+  - Support for provider switching: `provider = "deepseek"` or `provider = "anthropic"` in config
+
 - **SY-6: Anthropic Provider** - Real Claude API integration:
   - `AnthropicProvider` implementing `LlmProvider` trait for Anthropic Messages API
   - HTTP client via `reqwest` with JSON serialization for API requests

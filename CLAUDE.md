@@ -180,3 +180,4 @@ This creates a PRD in `docs/prd/SY-<N>.prd.md` and sets `docs/.active_ticket`.
 | SY-4 | Configuration | TOML config loading with multi-location priority |
 | SY-5 | Provider Abstraction | LlmProvider trait, Message/Role types, MockProvider |
 | SY-6 | Anthropic Provider | AnthropicProvider with Claude API, async CLI with tokio |
+| SY-7 | DeepSeek Provider | DeepSeekProvider with OpenAI-compatible API, provider factory pattern |
