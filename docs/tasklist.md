@@ -22,7 +22,7 @@
 | 5. Anthropic Provider (SY-6) | ✅ Complete | 5/5 |
 | 6. DeepSeek Provider (SY-7) | ✅ Complete | 5/5 |
 | 7. Streaming Responses (SY-8) | ✅ Complete | 4/4 |
-| 8. Session Storage | ⬜ Not Started | 0/5 |
+| 8. Session Storage | ⬜ Not Started | 0/7 |
 | 9. CLI REPL | ⬜ Not Started | 0/4 |
 | 10. OpenAI Provider | ⬜ Not Started | 0/3 |
 | 11. MCP Integration | ⬜ Not Started | 0/5 |
@@ -135,6 +135,8 @@
 - [ ] 8.3 Add `sqlx` (sqlite feature), create `storage/database.rs`
 - [ ] 8.4 Implement schema migrations (sessions + messages tables)
 - [ ] 8.5 Wire storage into CLI: save messages after each exchange
+- [ ] 8.6 Implement session limits (max sessions, retention period)
+- [ ] 8.7 Add automatic cleanup job for expired sessions
 
 **Test:** `synapse sessions list` shows previous conversations.
 

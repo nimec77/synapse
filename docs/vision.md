@@ -242,6 +242,14 @@ synapse/
 │ mcpServers: Map<    │
 │   String,McpServer> │
 └─────────────────────┘
+
+┌─────────────────────────────────────────┐
+│        SessionStorageConfig             │
+├─────────────────────────────────────────┤
+│ max_sessions: Option<u32>               │  // e.g., 100
+│ retention_days: Option<u32>             │  // e.g., 90
+│ auto_cleanup: bool                      │  // default: true
+└─────────────────────────────────────────┘
 ```
 
 ### Role Enum
@@ -286,6 +294,12 @@ CREATE INDEX idx_sessions_updated ON sessions(updated_at);
 - **Configuration**: TOML file at `~/.config/synapse/config.toml`
 - **MCP Servers**: JSON file at `~/.config/synapse/mcp_servers.json` (standard format compatible with Claude Desktop, Windsurf, etc.)
 - **Environment override**: `SYNAPSE_CONFIG` env var for custom path
+
+### Session Cleanup Behavior
+- **Max sessions limit**: When exceeded, oldest sessions are automatically deleted
+- **Retention period**: Sessions older than `retention_days` are purged
+- **Auto-cleanup**: When enabled, cleanup runs on startup and periodically during operation
+- **Manual override**: Users can disable auto-cleanup and manage sessions manually
 
 ### MCP Server Configuration Format
 

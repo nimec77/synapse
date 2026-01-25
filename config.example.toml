@@ -19,3 +19,17 @@ provider = "deepseek"
 # Anthropic: claude-3-5-sonnet-20241022, claude-3-opus-20240229
 # OpenAI: gpt-4, gpt-4-turbo, gpt-3.5-turbo
 model = "deepseek-chat"
+
+# Session storage configuration
+[session]
+# Maximum number of sessions to keep (oldest auto-deleted when exceeded)
+# Set to 0 or omit for unlimited
+max_sessions = 100
+
+# Delete sessions older than this many days
+# Set to 0 or omit to keep forever
+retention_days = 90
+
+# Enable automatic cleanup of old sessions
+# When true: cleanup runs on startup and periodically
+auto_cleanup = true
