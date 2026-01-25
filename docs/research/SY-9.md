@@ -9,9 +9,9 @@ User-provided answers to implementation questions:
    - Requires running `sqlx database create` and `sqlx migrate run` during development
    - DATABASE_URL environment variable needed for compile-time checks
 
-2. **Session ID Format**: UUID v4 (standard, universally unique)
-   - Add `uuid` crate with `v4` and `serde` features
-   - Session IDs generated with `Uuid::new_v4()`
+2. **Session ID Format**: UUID v8 (modern replacement for v4, sortable, universally unique)
+   - Add `uuid` crate with `v8` and `serde` features
+   - Session IDs generated with `Uuid::new_v8()`
 
 3. **Default Session Behavior**: New session (always create new, require explicit --session to continue)
    - Each CLI invocation creates a fresh session
@@ -317,7 +317,7 @@ futures = "0.3"
 
 # New for session storage
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] }
-uuid = { version = "1", features = ["v4", "serde"] }
+uuid = { version = "1", features = ["v8", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 ```
 
@@ -333,7 +333,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std", "sig
 futures = "0.3"
 
 # New
-uuid = { version = "1", features = ["v4"] }  # For parsing session IDs from CLI args
+uuid = { version = "1", features = ["v8"] }  # For parsing session IDs from CLI args
 ```
 
 ### SQLx CLI Tool
@@ -354,11 +354,12 @@ cargo sqlx prepare
 
 ---
 
-## Database Path Resolution
+## Database URL Resolution
 
-Default path: `~/.config/synapse/sessions.db`
-
-Override: `DATABASE_URL` environment variable
+Priority order:
+1. `DATABASE_URL` environment variable (highest priority)
+2. `session.database_url` in config.toml
+3. Default: `sqlite:~/.config/synapse/sessions.db`
 
 Implementation:
 ```rust

@@ -22,6 +22,11 @@ model = "deepseek-chat"
 
 # Session storage configuration
 [session]
+# Database URL for session storage
+# Can also be set via DATABASE_URL environment variable (takes priority)
+# Defaults to sqlite:~/.config/synapse/sessions.db
+# database_url = "sqlite:~/.config/synapse/sessions.db"
+
 # Maximum number of sessions to keep (oldest auto-deleted when exceeded)
 # Set to 0 or omit for unlimited
 max_sessions = 100

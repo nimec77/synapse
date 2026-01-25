@@ -19,7 +19,7 @@ Currently, the CLI operates in a stateless manner where each invocation starts f
 The architecture defines:
 - **SessionStore trait**: A port (interface) for storage implementations
 - **SqliteStore**: Default adapter implementation using sqlx
-- **Database location**: `~/.config/synapse/sessions.db` (configurable via `DATABASE_URL`)
+- **Database location**: `~/.config/synapse/sessions.db` (configurable via `DATABASE_URL` env var or `session.database_url` in config)
 - **Schema**: `sessions` and `messages` tables with proper indexing
 
 ### Session Storage Configuration
