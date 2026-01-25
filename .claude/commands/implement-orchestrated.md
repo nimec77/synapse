@@ -90,6 +90,24 @@ cargo clippy --tests -- -D warnings
 
 Collect results for all commands.
 
+### Step 5.1: Security Audit
+
+After all verification commands pass, run:
+```bash
+cargo audit
+```
+
+**If `cargo audit` fails:**
+- Do NOT enter the refinement loop (security issues cannot be auto-fixed)
+- Use AskUserQuestion to present options:
+  - Question: "Security vulnerability detected in dependencies. How should we proceed?"
+  - Header: "Security"
+  - Options:
+    1. "Ignore advisory" - Add to `.cargo/audit.toml` and continue
+    2. "Stop and review" - Halt implementation for manual review
+- If user chooses "Ignore advisory": Add the RUSTSEC ID to `.cargo/audit.toml` with a comment explaining why, then continue
+- If user chooses "Stop and review": Terminate with message about manual intervention required
+
 ### Step 6: Refinement (if verification failed)
 
 If any verification step failed:
