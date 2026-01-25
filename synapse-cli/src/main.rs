@@ -1,11 +1,12 @@
 //! Synapse CLI - Command-line interface for the Synapse AI agent.
 
-use std::io::{self, IsTerminal, Read};
+use std::io::{self, IsTerminal, Read, Write};
 
 use anyhow::{Context, Result};
 use clap::Parser;
+use futures::StreamExt;
 
-use synapse_core::{Config, Message, Role, create_provider};
+use synapse_core::{Config, Message, Role, StreamEvent, create_provider};
 
 /// Synapse CLI - AI agent command-line interface
 #[derive(Parser)]
@@ -33,14 +34,43 @@ async fn main() -> Result<()> {
     // Create provider using factory (handles API key lookup)
     let provider = create_provider(&config).context("Failed to create LLM provider")?;
 
-    // Send request
+    // Send request and stream response
     let messages = vec![Message::new(Role::User, message)];
-    let response = provider
-        .complete(&messages)
-        .await
-        .context("Failed to get response from LLM")?;
+    let stream = provider.stream(&messages);
+    tokio::pin!(stream);
 
-    println!("{}", response.content);
+    let mut stdout = io::stdout();
+
+    loop {
+        tokio::select! {
+            event = stream.next() => {
+                match event {
+                    Some(Ok(StreamEvent::TextDelta(text))) => {
+                        print!("{}", text);
+                        stdout.flush().context("Failed to flush stdout")?;
+                    }
+                    Some(Ok(StreamEvent::Done)) | None => {
+                        println!(); // Final newline
+                        break;
+                    }
+                    Some(Ok(StreamEvent::Error(e))) => {
+                        return Err(e).context("Streaming error");
+                    }
+                    Some(Ok(_)) => {
+                        // Ignore ToolCall/ToolResult for now
+                    }
+                    Some(Err(e)) => {
+                        return Err(e).context("Stream error");
+                    }
+                }
+            }
+            _ = tokio::signal::ctrl_c() => {
+                println!("\n[Interrupted]");
+                break;
+            }
+        }
+    }
+
     Ok(())
 }
 

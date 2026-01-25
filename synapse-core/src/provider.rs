@@ -7,18 +7,23 @@ mod anthropic;
 mod deepseek;
 mod factory;
 mod mock;
+mod streaming;
 
 pub use anthropic::AnthropicProvider;
 pub use deepseek::DeepSeekProvider;
 pub use factory::create_provider;
 pub use mock::MockProvider;
+pub use streaming::StreamEvent;
+
+use std::pin::Pin;
 
 use async_trait::async_trait;
+use futures::Stream;
 
 use crate::message::Message;
 
 /// Error type for provider operations.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum ProviderError {
     /// The provider returned an error response.
     #[error("provider error: {message}")]
@@ -75,4 +80,41 @@ pub trait LlmProvider: Send + Sync {
     ///
     /// The assistant's response message, or an error if the request failed.
     async fn complete(&self, messages: &[Message]) -> Result<Message, ProviderError>;
+
+    /// Stream response tokens from the LLM.
+    ///
+    /// Returns a stream of [`StreamEvent`] items. The stream ends with
+    /// [`StreamEvent::Done`] on success or yields an error on failure.
+    ///
+    /// # Arguments
+    ///
+    /// * `messages` - Conversation history to send to the model
+    ///
+    /// # Returns
+    ///
+    /// A pinned, boxed stream of stream events. The `Send` bound enables
+    /// use in async contexts across thread boundaries.
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// use futures::StreamExt;
+    /// use synapse_core::provider::{LlmProvider, StreamEvent};
+    ///
+    /// async fn stream_example(provider: &dyn LlmProvider, messages: &[Message]) {
+    ///     let mut stream = provider.stream(messages);
+    ///     while let Some(event) = stream.next().await {
+    ///         match event {
+    ///             Ok(StreamEvent::TextDelta(text)) => print!("{}", text),
+    ///             Ok(StreamEvent::Done) => break,
+    ///             Err(e) => eprintln!("Error: {}", e),
+    ///             _ => {}
+    ///         }
+    ///     }
+    /// }
+    /// ```
+    fn stream(
+        &self,
+        messages: &[Message],
+    ) -> Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send + '_>>;
 }

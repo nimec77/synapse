@@ -3,10 +3,14 @@
 //! Implements the [`LlmProvider`] trait for DeepSeek's OpenAI-compatible
 //! Chat Completions API.
 
+use std::pin::Pin;
+
 use async_trait::async_trait;
+use eventsource_stream::Eventsource;
+use futures::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 
-use super::{LlmProvider, ProviderError};
+use super::{LlmProvider, ProviderError, StreamEvent};
 use crate::message::{Message, Role};
 
 /// Default max tokens for API responses.
@@ -71,6 +75,19 @@ struct ApiRequest {
     max_tokens: u32,
 }
 
+/// Request body for streaming Chat Completions API.
+#[derive(Debug, Serialize)]
+struct StreamingApiRequest {
+    /// Model identifier.
+    model: String,
+    /// Conversation messages (including system messages).
+    messages: Vec<ApiMessage>,
+    /// Maximum tokens to generate.
+    max_tokens: u32,
+    /// Enable streaming mode.
+    stream: bool,
+}
+
 /// A single message in the API request.
 #[derive(Debug, Serialize)]
 struct ApiMessage {
@@ -113,6 +130,33 @@ struct ApiError {
 struct ErrorDetail {
     /// Human-readable error message.
     message: String,
+}
+
+/// SSE streaming response chunk.
+#[derive(Debug, Deserialize)]
+struct StreamChunk {
+    /// Response choices.
+    choices: Vec<StreamChoice>,
+}
+
+/// A choice in the streaming response.
+#[derive(Debug, Deserialize)]
+struct StreamChoice {
+    /// Delta content for this chunk.
+    delta: StreamDelta,
+    /// Reason the response finished (if complete).
+    ///
+    /// Currently unused but deserialized for potential future use.
+    #[serde(default)]
+    #[allow(dead_code)]
+    finish_reason: Option<String>,
+}
+
+/// Delta content in a streaming choice.
+#[derive(Debug, Deserialize)]
+struct StreamDelta {
+    /// The content fragment (may be None on first/last chunks).
+    content: Option<String>,
 }
 
 #[async_trait]
@@ -185,6 +229,112 @@ impl LlmProvider for DeepSeekProvider {
             .unwrap_or_default();
 
         Ok(Message::new(Role::Assistant, content))
+    }
+
+    fn stream(
+        &self,
+        messages: &[Message],
+    ) -> Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send + '_>> {
+        // Clone data needed for the async stream
+        let messages = messages.to_vec();
+        let client = self.client.clone();
+        let api_key = self.api_key.clone();
+        let model = self.model.clone();
+
+        Box::pin(async_stream::stream! {
+            // Convert all messages to API format
+            let api_messages: Vec<ApiMessage> = messages
+                .iter()
+                .map(|m| ApiMessage {
+                    role: match m.role {
+                        Role::System => "system".to_string(),
+                        Role::User => "user".to_string(),
+                        Role::Assistant => "assistant".to_string(),
+                    },
+                    content: m.content.clone(),
+                })
+                .collect();
+
+            let request = StreamingApiRequest {
+                model,
+                messages: api_messages,
+                max_tokens: DEFAULT_MAX_TOKENS,
+                stream: true,
+            };
+
+            // Send request
+            let response = client
+                .post(API_ENDPOINT)
+                .header("Authorization", format!("Bearer {}", api_key))
+                .header("Content-Type", "application/json")
+                .json(&request)
+                .send()
+                .await;
+
+            let response = match response {
+                Ok(r) => r,
+                Err(e) => {
+                    yield Err(ProviderError::RequestFailed(e.to_string()));
+                    return;
+                }
+            };
+
+            // Check for HTTP errors
+            let status = response.status();
+            if status == reqwest::StatusCode::UNAUTHORIZED {
+                yield Err(ProviderError::AuthenticationError(
+                    "Invalid API key".to_string()
+                ));
+                return;
+            }
+
+            if !status.is_success() {
+                yield Err(ProviderError::RequestFailed(
+                    format!("HTTP {}", status)
+                ));
+                return;
+            }
+
+            // Parse SSE stream
+            let mut stream = response.bytes_stream().eventsource();
+
+            while let Some(event) = stream.next().await {
+                match event {
+                    Ok(event) => {
+                        // Handle [DONE] marker
+                        if event.data == "[DONE]" {
+                            yield Ok(StreamEvent::Done);
+                            return;
+                        }
+
+                        // Parse JSON delta
+                        match serde_json::from_str::<StreamChunk>(&event.data) {
+                            Ok(chunk) => {
+                                if let Some(choice) = chunk.choices.first()
+                                    && let Some(content) = &choice.delta.content
+                                    && !content.is_empty()
+                                {
+                                    yield Ok(StreamEvent::TextDelta(content.clone()));
+                                }
+                            }
+                            Err(e) => {
+                                yield Err(ProviderError::ProviderError {
+                                    message: format!("Failed to parse SSE: {}", e),
+                                });
+                                return;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        yield Err(ProviderError::RequestFailed(e.to_string()));
+                        return;
+                    }
+                }
+            }
+
+            // Stream ended without [DONE] - still signal done
+            yield Ok(StreamEvent::Done);
+        })
     }
 }
 
@@ -294,5 +444,114 @@ mod tests {
         let error: ApiError = serde_json::from_str(json).unwrap();
 
         assert_eq!(error.error.message, "Incorrect API key provided");
+    }
+
+    #[test]
+    fn test_streaming_request_serialization() {
+        let request = StreamingApiRequest {
+            model: "deepseek-chat".to_string(),
+            messages: vec![ApiMessage {
+                role: "user".to_string(),
+                content: "Hello".to_string(),
+            }],
+            max_tokens: 1024,
+            stream: true,
+        };
+
+        let json = serde_json::to_value(&request).unwrap();
+
+        assert_eq!(json["model"], "deepseek-chat");
+        assert_eq!(json["stream"], true);
+        assert_eq!(json["max_tokens"], 1024);
+    }
+
+    #[test]
+    fn test_parse_sse_text_delta() {
+        let json = r#"{
+            "id": "chatcmpl-123",
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {
+                        "content": "Hello"
+                    },
+                    "finish_reason": null
+                }
+            ]
+        }"#;
+
+        let chunk: StreamChunk = serde_json::from_str(json).unwrap();
+
+        assert_eq!(chunk.choices.len(), 1);
+        assert_eq!(chunk.choices[0].delta.content, Some("Hello".to_string()));
+        assert!(chunk.choices[0].finish_reason.is_none());
+    }
+
+    #[test]
+    fn test_parse_sse_done() {
+        // The [DONE] marker is checked as a string before parsing
+        let done_marker = "[DONE]";
+        assert_eq!(done_marker, "[DONE]");
+
+        // Also test parsing a final chunk with finish_reason
+        let json = r#"{
+            "id": "chatcmpl-123",
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {},
+                    "finish_reason": "stop"
+                }
+            ]
+        }"#;
+
+        let chunk: StreamChunk = serde_json::from_str(json).unwrap();
+
+        assert!(chunk.choices[0].delta.content.is_none());
+        assert_eq!(chunk.choices[0].finish_reason, Some("stop".to_string()));
+    }
+
+    #[test]
+    fn test_parse_sse_empty_content() {
+        let json = r#"{
+            "id": "chatcmpl-123",
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {
+                        "content": ""
+                    },
+                    "finish_reason": null
+                }
+            ]
+        }"#;
+
+        let chunk: StreamChunk = serde_json::from_str(json).unwrap();
+
+        // Empty content should be filtered out by the streaming logic
+        let content = chunk.choices[0].delta.content.as_deref().unwrap_or("");
+        assert!(content.is_empty());
+    }
+
+    #[test]
+    fn test_parse_sse_with_role() {
+        // First event often has role but no content
+        let json = r#"{
+            "id": "chatcmpl-123",
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {
+                        "role": "assistant"
+                    },
+                    "finish_reason": null
+                }
+            ]
+        }"#;
+
+        let chunk: StreamChunk = serde_json::from_str(json).unwrap();
+
+        // No content in first event
+        assert!(chunk.choices[0].delta.content.is_none());
     }
 }

@@ -10,7 +10,8 @@ pub mod provider;
 pub use config::{Config, ConfigError};
 pub use message::{Message, Role};
 pub use provider::{
-    AnthropicProvider, DeepSeekProvider, LlmProvider, MockProvider, ProviderError, create_provider,
+    AnthropicProvider, DeepSeekProvider, LlmProvider, MockProvider, ProviderError, StreamEvent,
+    create_provider,
 };
 
 /// Placeholder module for initial setup.
