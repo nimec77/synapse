@@ -28,15 +28,36 @@ Read:
 
 Analyze the diff for changes related to ticket `$1` (use `git diff` or check modified files).
 
-### Step 3: Generate Review
+### Step 3: Requirements Compliance Check (CRITICAL)
+
+**Before reviewing code quality, verify that the implementation matches ALL requirements from the PRD and plan.**
+
+1. Read all requirements from `docs/prd/$1.prd.md` and `docs/plan/$1.md`
+2. Also read any referenced documentation (e.g., `docs/phase/phase-*.md`, `docs/vision.md`)
+3. For EACH requirement, verify:
+   - Is it implemented in the code?
+   - Does the implementation match the specification exactly?
+
+**Requirements deviations are ALWAYS blocking issues.**
+
+Examples of requirements deviations:
+- PRD specifies "UUID v8" but code uses UUID v4
+- PRD specifies "DATABASE_URL from config.toml" but code only reads from env var
+- PRD specifies a specific API contract that isn't implemented
+
+### Step 4: Generate Review
 
 Generate a structured review with three categories:
 
-1. **Blocking** - Issues that MUST be fixed before merging (security issues, breaking bugs, missing required functionality)
+1. **Blocking** - Issues that MUST be fixed before merging:
+   - **Requirements deviations** (implementation doesn't match PRD/plan specifications)
+   - Security issues
+   - Breaking bugs
+   - Missing required functionality
 2. **Important** - Recommended fixes that improve quality (safety comments, validation, edge cases)
 3. **Cosmetic** - Minor improvements (naming, style, test coverage for edge cases)
 
-### Step 4: Handle Review Results
+### Step 5: Handle Review Results
 
 #### If Blocking Issues Found
 
@@ -76,7 +97,7 @@ Generate a structured review with three categories:
 
 1. Report: "REVIEW_OK: No issues found. Code is ready for QA."
 
-### Step 5: Return Status
+### Step 6: Return Status
 
 The command must clearly output one of these statuses at the end:
 - `REVIEW_OK` - No fixes needed, proceed to QA
