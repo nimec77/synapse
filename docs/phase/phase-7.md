@@ -8,10 +8,10 @@ Implement streaming responses from LLM providers using Server-Sent Events (SSE).
 
 ## Tasks
 
-- [ ] 7.1 Add `eventsource-stream`, `async-stream`, `futures` to core
-- [ ] 7.2 Create `synapse-core/src/provider/streaming.rs` with `StreamEvent` enum
-- [ ] 7.3 Implement SSE parsing in `DeepSeekProvider::stream()` method
-- [ ] 7.4 Update CLI to print tokens as they arrive
+- [x] 7.1 Add `eventsource-stream`, `async-stream`, `futures` to core
+- [x] 7.2 Create `synapse-core/src/provider/streaming.rs` with `StreamEvent` enum
+- [x] 7.3 Implement SSE parsing in `DeepSeekProvider::stream()` method
+- [x] 7.4 Update CLI to print tokens as they arrive
 
 ## Technical Details
 
