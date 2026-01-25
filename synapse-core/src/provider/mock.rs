@@ -3,11 +3,13 @@
 //! Provides [`MockProvider`], a configurable mock implementation
 //! of [`LlmProvider`] for unit and integration testing.
 
+use std::pin::Pin;
 use std::sync::Mutex;
 
 use async_trait::async_trait;
+use futures::Stream;
 
-use super::{LlmProvider, ProviderError};
+use super::{LlmProvider, ProviderError, StreamEvent};
 use crate::message::{Message, Role};
 
 /// A mock LLM provider for testing.
@@ -33,6 +35,7 @@ use crate::message::{Message, Role};
 #[derive(Debug, Default)]
 pub struct MockProvider {
     responses: Mutex<Vec<Message>>,
+    stream_tokens: Mutex<Vec<String>>,
 }
 
 impl MockProvider {
@@ -92,6 +95,40 @@ impl MockProvider {
         }
         self
     }
+
+    /// Configure tokens to yield when streaming.
+    ///
+    /// When streaming is called, each token is yielded as a `TextDelta`
+    /// event, followed by a `Done` event.
+    ///
+    /// If no tokens are configured, streaming will fall back to calling
+    /// `complete()` and yielding the full response as a single `TextDelta`.
+    ///
+    /// # Arguments
+    ///
+    /// * `tokens` - Tokens to yield during streaming
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use synapse_core::provider::MockProvider;
+    ///
+    /// let provider = MockProvider::new()
+    ///     .with_stream_tokens(vec!["Hello", " ", "world", "!"]);
+    /// ```
+    #[must_use]
+    pub fn with_stream_tokens(self, tokens: Vec<&str>) -> Self {
+        match self.stream_tokens.lock() {
+            Ok(mut stream_tokens) => {
+                *stream_tokens = tokens.into_iter().map(|s| s.to_string()).collect();
+            }
+            Err(poisoned) => {
+                let mut stream_tokens = poisoned.into_inner();
+                *stream_tokens = tokens.into_iter().map(|s| s.to_string()).collect();
+            }
+        }
+        self
+    }
 }
 
 #[async_trait]
@@ -107,6 +144,48 @@ impl LlmProvider for MockProvider {
         } else {
             Ok(Message::new(Role::Assistant, "Mock response"))
         }
+    }
+
+    fn stream(
+        &self,
+        _messages: &[Message],
+    ) -> Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send + '_>> {
+        // Get configured tokens
+        let tokens: Vec<String> = match self.stream_tokens.lock() {
+            Ok(guard) => guard.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
+        };
+
+        // Get fallback response if tokens are empty
+        let fallback_content: Option<String> = if tokens.is_empty() {
+            let mut responses = match self.responses.lock() {
+                Ok(guard) => guard,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+
+            let response = if let Some(response) = responses.pop() {
+                response
+            } else {
+                Message::new(Role::Assistant, "Mock response")
+            };
+            Some(response.content)
+        } else {
+            None
+        };
+
+        Box::pin(async_stream::stream! {
+            if let Some(content) = fallback_content {
+                // Fallback: yield the complete response as single delta
+                yield Ok(StreamEvent::TextDelta(content));
+                yield Ok(StreamEvent::Done);
+            } else {
+                // Yield each token as a TextDelta
+                for token in tokens {
+                    yield Ok(StreamEvent::TextDelta(token));
+                }
+                yield Ok(StreamEvent::Done);
+            }
+        })
     }
 }
 
@@ -174,5 +253,73 @@ mod tests {
         let response = provider.complete(&messages).await.unwrap();
 
         assert_eq!(response.role, Role::Assistant);
+    }
+
+    #[tokio::test]
+    async fn test_mock_stream_tokens() {
+        use futures::StreamExt;
+
+        let provider = MockProvider::new().with_stream_tokens(vec!["Hello", " ", "world", "!"]);
+        let messages = vec![Message::new(Role::User, "Test")];
+
+        let mut stream = provider.stream(&messages);
+        let mut tokens = Vec::new();
+
+        while let Some(event) = stream.next().await {
+            match event {
+                Ok(StreamEvent::TextDelta(text)) => tokens.push(text),
+                Ok(StreamEvent::Done) => break,
+                _ => {}
+            }
+        }
+
+        assert_eq!(tokens, vec!["Hello", " ", "world", "!"]);
+    }
+
+    #[tokio::test]
+    async fn test_mock_stream_fallback() {
+        use futures::StreamExt;
+
+        // No stream tokens configured, should fall back to complete()
+        let provider = MockProvider::new().with_response("Fallback response");
+        let messages = vec![Message::new(Role::User, "Test")];
+
+        let mut stream = provider.stream(&messages);
+        let mut tokens = Vec::new();
+        let mut done_received = false;
+
+        while let Some(event) = stream.next().await {
+            match event {
+                Ok(StreamEvent::TextDelta(text)) => tokens.push(text),
+                Ok(StreamEvent::Done) => {
+                    done_received = true;
+                    break;
+                }
+                _ => {}
+            }
+        }
+
+        assert_eq!(tokens, vec!["Fallback response"]);
+        assert!(done_received, "Stream should end with Done event");
+    }
+
+    #[tokio::test]
+    async fn test_mock_stream_ends_with_done() {
+        use futures::StreamExt;
+
+        let provider = MockProvider::new().with_stream_tokens(vec!["test"]);
+        let messages = vec![Message::new(Role::User, "Test")];
+
+        let mut stream = provider.stream(&messages);
+        let mut last_event = None;
+
+        while let Some(event) = stream.next().await {
+            last_event = Some(event);
+        }
+
+        assert!(
+            matches!(last_event, Some(Ok(StreamEvent::Done))),
+            "Stream should end with Done event"
+        );
     }
 }

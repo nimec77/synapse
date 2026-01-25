@@ -3,10 +3,13 @@
 //! Implements the [`LlmProvider`] trait for Anthropic's Messages API,
 //! enabling real Claude completions through the Synapse agent.
 
+use std::pin::Pin;
+
 use async_trait::async_trait;
+use futures::Stream;
 use serde::{Deserialize, Serialize};
 
-use super::{LlmProvider, ProviderError};
+use super::{LlmProvider, ProviderError, StreamEvent};
 use crate::message::{Message, Role};
 
 /// Default max tokens for API responses.
@@ -214,6 +217,27 @@ impl LlmProvider for AnthropicProvider {
 
         Ok(Message::new(Role::Assistant, content))
     }
+
+    fn stream(
+        &self,
+        messages: &[Message],
+    ) -> Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send + '_>> {
+        // Clone messages for the async stream
+        let messages = messages.to_vec();
+
+        Box::pin(async_stream::stream! {
+            // Fallback: call complete() and yield as single delta
+            match self.complete(&messages).await {
+                Ok(msg) => {
+                    yield Ok(StreamEvent::TextDelta(msg.content));
+                    yield Ok(StreamEvent::Done);
+                }
+                Err(e) => {
+                    yield Err(e);
+                }
+            }
+        })
+    }
 }
 
 #[cfg(test)]
@@ -353,5 +377,13 @@ mod tests {
 
         assert_eq!(error.error.error_type, "authentication_error");
         assert_eq!(error.error.message, "invalid x-api-key");
+    }
+
+    #[test]
+    fn test_anthropic_provider_implements_stream() {
+        // Verify AnthropicProvider implements the stream method
+        // This is a compile-time check - if it compiles, the trait is implemented
+        fn assert_stream_impl<T: LlmProvider>() {}
+        assert_stream_impl::<AnthropicProvider>();
     }
 }
