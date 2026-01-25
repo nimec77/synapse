@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **SY-9: Session Storage** - Persistent conversation storage using SQLite:
+  - `Session`, `SessionSummary`, `StoredMessage` types in `synapse-core/src/session.rs`
+  - `SessionStore` trait defining storage abstraction with CRUD operations
+  - `SqliteStore` implementation with connection pooling and WAL mode
+  - `StorageError` enum with `Database`, `NotFound`, `Migration`, `InvalidData` variants
+  - `CleanupResult` struct tracking deleted sessions by limit and retention
+  - Database migrations in `synapse-core/migrations/20250125_001_initial.sql`
+  - `sessions` and `messages` tables with indexes and CASCADE delete
+  - UUID v7 for time-sortable session and message identifiers
+  - `SessionConfig` with `database_url`, `max_sessions` (default 100), `retention_days` (default 90), `auto_cleanup` (default true)
+  - Database URL resolution priority: `DATABASE_URL` env var > config.toml > default path
+  - CLI session commands: `synapse sessions list`, `synapse sessions show <uuid>`, `synapse sessions delete <uuid>`
+  - Continue session: `synapse --session <uuid> "message"` or `synapse -s <uuid> "message"`
+  - Auto-cleanup on startup when `auto_cleanup: true`
+  - `create_storage()` factory function for storage initialization
+  - 30+ unit tests for session, storage, and SQLite operations
+  - Dependencies: sqlx (sqlite, runtime-tokio), uuid (v7, serde), chrono (serde), async-trait, dirs
+
 - **SY-8: Streaming Responses** - Token-by-token output for real-time response display:
   - `StreamEvent` enum with `TextDelta`, `ToolCall`, `ToolResult`, `Done`, `Error` variants
   - `stream()` method added to `LlmProvider` trait with object-safe return type
