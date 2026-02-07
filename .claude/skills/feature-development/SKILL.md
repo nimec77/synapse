@@ -58,14 +58,14 @@ Execute each missing gate in order. **You MUST use the Skill or Task tool** as s
 
 #### Gate 3: TASKLIST_READY
 - **Condition**: Tasklist file `docs/tasklist/$1.md` does not exist
-- **Action**: Invoke Skill tool with `skill: "tasks"` and `args: "$1"`
+- **Action**: Invoke Skill tool with `skill: "tasklist"` and `args: "$1"`
 - **On Skill Return**: When the skill completes, IMMEDIATELY proceed to Gate 4.
 
 #### Gate 4: IMPLEMENT_STEP_OK
 - **Condition**: Tasklist contains incomplete tasks (unchecked items `- [ ]`)
 - **Action**: Invoke Task tool with:
   - `subagent_type`: "general-purpose"
-  - `prompt`: "Execute the implement-orchestrated workflow for ticket $1. Read `.claude/commands/implement-orchestrated.md` for instructions. Arguments: $1 --auto"
+  - `prompt`: "Execute the implement-orchestrated workflow for ticket $1. Read `.claude/skills/implement-orchestrated/SKILL.md` for instructions. Arguments: $1 --auto"
   - `description`: "Implement $1 tasks"
 - **On Task Return**: When the task agent completes, IMMEDIATELY proceed based on context:
   - **If this is initial implementation** (not in a review loop): proceed to the checkpoint below
@@ -82,7 +82,7 @@ Execute each missing gate in order. **You MUST use the Skill or Task tool** as s
 - **Condition**: Implementation gate passed
 - **Action**: Invoke Task tool with:
   - `subagent_type`: "reviewer"
-  - `prompt`: "Review changes for ticket $1. Read `.claude/commands/run-reviewer.md` for instructions. Arguments: $1"
+  - `prompt`: "Review changes for ticket $1. Read `.claude/skills/run-reviewer/SKILL.md` for instructions. Arguments: $1"
   - `description`: "Review $1 changes"
 - **On Task Return**: When the reviewer task completes, parse the output for status and IMMEDIATELY proceed:
 
@@ -104,7 +104,7 @@ Execute each missing gate in order. **You MUST use the Skill or Task tool** as s
 - **Condition**: QA Report file `reports/qa/$1.md` does not exist
 - **Action**: Invoke Task tool with:
   - `subagent_type`: "qa"
-  - `prompt`: "Generate QA plan and report for ticket $1. Read `.claude/commands/qa.md` for instructions. Arguments: $1"
+  - `prompt`: "Generate QA plan and report for ticket $1. Read `.claude/skills/qa/SKILL.md` for instructions. Arguments: $1"
   - `description`: "QA for $1"
 - **On Task Return**: When the QA task completes, IMMEDIATELY proceed to Gate 7.
 
@@ -112,7 +112,7 @@ Execute each missing gate in order. **You MUST use the Skill or Task tool** as s
 - **Condition**: Summary file `docs/summaries/$1-summary.md` does not exist
 - **Action**: Invoke Task tool with:
   - `subagent_type`: "tech-writer"
-  - `prompt`: "Update documentation for ticket $1. Read `.claude/commands/docs-update.md` for instructions. Arguments: $1"
+  - `prompt`: "Update documentation for ticket $1. Read `.claude/skills/docs-update/SKILL.md` for instructions. Arguments: $1"
   - `description`: "Update docs for $1"
 - **On Task Return**: When the docs task completes, IMMEDIATELY proceed to Step 3 (Confirm Completion).
 
