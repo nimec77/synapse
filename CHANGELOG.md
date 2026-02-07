@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **SY-11: OpenAI Provider** - OpenAI Chat Completions API support with runtime provider override:
+  - `OpenAiProvider` implementing `LlmProvider` trait for OpenAI's Chat Completions API (`complete()` and `stream()`)
+  - Provider factory updated: `"openai"` recognized with `OPENAI_API_KEY` env var resolution
+  - `-p` / `--provider` CLI flag to override configured provider at runtime (e.g., `synapse -p openai "Hello"`)
+  - CLI flag works across all modes: one-shot, stdin, REPL, and session resume
+  - Full SSE streaming support with token-by-token rendering, identical to DeepSeek
+  - HTTP 401 mapped to `AuthenticationError`, missing key to `MissingApiKey` with clear guidance
+  - `OpenAiProvider` publicly exported from `synapse-core` for external crate use
+  - 16 new tests (10 provider unit + 2 factory + 4 CLI flag parsing)
+  - No new dependencies: OpenAI wire format is identical to DeepSeek (same crates reused)
+
 - **SY-10: CLI REPL** - Interactive terminal UI for multi-turn conversations:
   - `synapse --repl` / `synapse -r` enters interactive REPL mode with a `ratatui` + `crossterm` TUI
   - Three-area vertical layout: scrollable conversation history, input area with cursor, status bar
