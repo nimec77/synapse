@@ -24,13 +24,13 @@
 | 7. Streaming Responses (SY-8) | ✅ Complete | 4/4 |
 | 8. Session Storage (SY-9) | ✅ Complete | 7/7 |
 | 9. CLI REPL (SY-10) | ✅ Complete | 4/4 |
-| 10. OpenAI Provider | ⬜ Not Started | 0/3 |
+| 10. OpenAI Provider | ✅ Complete | 3/3 |
 | 11. MCP Integration | ⬜ Not Started | 0/5 |
 | 12. Telegram Bot | ⬜ Not Started | 0/4 |
 
 **Legend:** ⬜ Not Started | 🔄 In Progress | ✅ Complete | ⏸️ Blocked
 
-**Current Phase:** 10
+**Current Phase:** 11
 **Last Updated:** 2026-02-07
 
 ---
@@ -167,9 +167,9 @@
 
 **Goal:** Support OpenAI alongside DeepSeek and Anthropic.
 
-- [ ] 10.1 Create `synapse-core/src/provider/openai.rs` implementing `LlmProvider`
-- [ ] 10.2 Add provider selection in config and CLI flag (`-p openai`)
-- [ ] 10.3 Implement streaming for OpenAI API
+- [x] 10.1 Create `synapse-core/src/provider/openai.rs` implementing `LlmProvider`
+- [x] 10.2 Add provider selection in config and CLI flag (`-p openai`)
+- [x] 10.3 Implement streaming for OpenAI API
 
 **Test:** `synapse -p openai "Hello"` uses GPT, default uses DeepSeek.
 
