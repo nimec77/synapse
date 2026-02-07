@@ -9,7 +9,7 @@ You are the orchestrator of feature `$1` ("$ARGUMENTS").
 
 ## Workflow
 
-Execute the feature development workflow by running each gate in sequence until all gates pass. After every Skill or Task tool returns, immediately continue to the next numbered step — never stop between steps.
+Execute the feature development workflow by running each gate in sequence until all gates pass. After every Task tool returns, immediately continue to the next numbered step — never stop between steps.
 
 ### Step 1: Check Current Status
 
@@ -22,12 +22,15 @@ Check which artifacts exist for ticket `$1`:
 
 ### Step 2: Execute Missing Gates
 
-Execute each missing gate in order. **You MUST use the Skill or Task tool** as specified in each gate - do NOT perform the actions directly.
+Execute each missing gate in order. **You MUST use the Task tool** as specified in each gate - do NOT perform the actions directly.
 
 #### Gate 1: PRD_READY
 - **Condition**: PRD file `docs/prd/$1.prd.md` does not exist
 - **Steps** (execute in order, do not stop between steps):
-  1. Invoke Skill tool: `skill: "analysis"`, `args: "$1 $2 $3"`
+  1. Invoke Task tool:
+     - `subagent_type`: "general-purpose"
+     - `prompt`: "Create a PRD for ticket $1. Read `.claude/skills/analysis/SKILL.md` for instructions. Arguments: $1 $2 $3"
+     - `description`: "Create $1 PRD"
   2. Invoke AskUserQuestion tool:
      - question: "PRD has been created. Ready to proceed to research and planning phase?"
      - header: "PRD Done"
@@ -44,8 +47,14 @@ Execute each missing gate in order. **You MUST use the Skill or Task tool** as s
 #### Gate 2: PLAN_APPROVED
 - **Condition**: Plan file `docs/plan/$1.md` does not exist
 - **Steps** (execute in order, do not stop between steps):
-  1. Invoke Skill tool: `skill: "research"`, `args: "$1"`
-  2. Invoke Skill tool: `skill: "plan"`, `args: "$1"`
+  1. Invoke Task tool:
+     - `subagent_type`: "general-purpose"
+     - `prompt`: "Research the codebase for ticket $1. Read `.claude/skills/research/SKILL.md` for instructions. Arguments: $1"
+     - `description`: "Research $1"
+  2. Invoke Task tool:
+     - `subagent_type`: "general-purpose"
+     - `prompt`: "Create an implementation plan for ticket $1. Read `.claude/skills/plan/SKILL.md` for instructions. Arguments: $1"
+     - `description`: "Plan $1"
   3. Invoke AskUserQuestion tool:
      - question: "Implementation plan has been created. Ready to proceed to task breakdown and implementation?"
      - header: "Plan Done"
@@ -62,7 +71,10 @@ Execute each missing gate in order. **You MUST use the Skill or Task tool** as s
 #### Gate 3: TASKLIST_READY
 - **Condition**: Tasklist file `docs/tasklist/$1.md` does not exist
 - **Steps** (execute in order, do not stop between steps):
-  1. Invoke Skill tool: `skill: "tasklist"`, `args: "$1"`
+  1. Invoke Task tool:
+     - `subagent_type`: "general-purpose"
+     - `prompt`: "Create a tasklist for ticket $1. Read `.claude/skills/tasklist/SKILL.md` for instructions. Arguments: $1"
+     - `description`: "Create $1 tasklist"
   2. Proceed to Gate 4
 
 #### Gate 4: IMPLEMENT_STEP_OK
@@ -161,13 +173,13 @@ Invoke Skill tool with `skill: "init"` to regenerate the `CLAUDE.md` file with a
 ## Important
 
 - Execute gates sequentially — each depends on the previous
-- Every gate uses a numbered **Steps** list. Execute all steps in order. Do not stop after a Skill or Task tool returns — continue to the next numbered step.
+- Every gate uses a numbered **Steps** list. Execute all steps in order. Do not stop after a Task tool returns — continue to the next numbered step.
 - **Checkpoints**: Use AskUserQuestion at designated checkpoints (after PRD, Plan, Implementation) to let users pause or continue. Always use the structured AskUserQuestion tool — never just output text asking for confirmation.
 - If user selects "Pause to review" at any checkpoint, re-prompt with AskUserQuestion until they select "Continue". Never terminate the workflow at intermediate checkpoints.
 - If any gate fails, stop and report the issue
 - Description file sync happens only after successful completion of all gates
 - **Review loop**: Gate 5 can loop back to Gate 4 if fixes are requested. Track loop count to prevent infinite loops.
-- **Task vs Skill**: Gates 4-7 use Task tool (which creates separate agent context) to ensure proper return to parent workflow. Gates 1-3 use Skill tool for simpler orchestration.
+- **Task tool for all gates**: All gates use Task tool (which creates separate agent context) to ensure proper return to parent workflow.
 
 ## Gate Flow Diagram
 
