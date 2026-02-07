@@ -7,12 +7,14 @@ mod anthropic;
 mod deepseek;
 mod factory;
 mod mock;
+mod openai;
 mod streaming;
 
 pub use anthropic::AnthropicProvider;
 pub use deepseek::DeepSeekProvider;
 pub use factory::create_provider;
 pub use mock::MockProvider;
+pub use openai::OpenAiProvider;
 pub use streaming::StreamEvent;
 
 use std::pin::Pin;

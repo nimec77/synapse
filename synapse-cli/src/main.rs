@@ -29,6 +29,10 @@ struct Args {
     #[arg(short, long)]
     repl: bool,
 
+    /// Override the LLM provider from config
+    #[arg(short = 'p', long)]
+    provider: Option<String>,
+
     /// Session management commands
     #[command(subcommand)]
     command: Option<Commands>,
@@ -62,7 +66,12 @@ enum SessionAction {
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
-    let config = Config::load().unwrap_or_default();
+    let mut config = Config::load().unwrap_or_default();
+
+    // Apply provider override from CLI flag
+    if let Some(ref provider) = args.provider {
+        config.provider = provider.clone();
+    }
 
     // Handle subcommands
     if let Some(command) = args.command {
@@ -398,5 +407,32 @@ mod tests {
     fn test_args_repl_default_false() {
         let args = Args::parse_from(["synapse", "Hello"]);
         assert!(!args.repl);
+    }
+
+    #[test]
+    fn test_args_with_provider_flag() {
+        let args = Args::parse_from(["synapse", "-p", "openai", "Hello"]);
+        assert_eq!(args.provider, Some("openai".to_string()));
+        assert_eq!(args.message, Some("Hello".to_string()));
+    }
+
+    #[test]
+    fn test_args_with_provider_long_flag() {
+        let args = Args::parse_from(["synapse", "--provider", "openai", "Hello"]);
+        assert_eq!(args.provider, Some("openai".to_string()));
+        assert_eq!(args.message, Some("Hello".to_string()));
+    }
+
+    #[test]
+    fn test_args_provider_with_repl() {
+        let args = Args::parse_from(["synapse", "-p", "openai", "--repl"]);
+        assert_eq!(args.provider, Some("openai".to_string()));
+        assert!(args.repl);
+    }
+
+    #[test]
+    fn test_args_provider_default_none() {
+        let args = Args::parse_from(["synapse", "Hello"]);
+        assert!(args.provider.is_none());
     }
 }
