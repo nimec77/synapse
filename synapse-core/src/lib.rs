@@ -12,8 +12,8 @@ pub mod storage;
 pub use config::{Config, ConfigError, SessionConfig};
 pub use message::{Message, Role};
 pub use provider::{
-    AnthropicProvider, DeepSeekProvider, LlmProvider, MockProvider, ProviderError, StreamEvent,
-    create_provider,
+    AnthropicProvider, DeepSeekProvider, LlmProvider, MockProvider, OpenAiProvider, ProviderError,
+    StreamEvent, create_provider,
 };
 pub use session::{Session, SessionSummary, StoredMessage};
 pub use storage::{CleanupResult, SessionStore, SqliteStore, StorageError, create_storage};
