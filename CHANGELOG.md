@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **SY-10: CLI REPL** - Interactive terminal UI for multi-turn conversations:
+  - `synapse --repl` / `synapse -r` enters interactive REPL mode with a `ratatui` + `crossterm` TUI
+  - Three-area vertical layout: scrollable conversation history, input area with cursor, status bar
+  - Streaming responses render token-by-token in the conversation history
+  - Full input editing: character insert, backspace, cursor movement (left/right/home/end)
+  - History scrolling: up/down (line), page up/page down (page)
+  - Session persistence: all messages stored to SQLite during REPL conversation
+  - Session resume: `synapse --repl --session <uuid>` loads and continues a previous conversation
+  - Session ID printed to stderr on exit for future resumption
+  - `/quit` command and Ctrl+C for clean exit
+  - `TerminalGuard` with `Drop` implementation ensures terminal state restoration on all exit paths
+  - 29 new tests (25 REPL logic + 4 CLI flag parsing)
+  - Dependencies: `ratatui` 0.30.0, `crossterm` 0.29.0 (with `event-stream` feature)
+
 - **SY-9: Session Storage** - Persistent conversation storage using SQLite:
   - `Session`, `SessionSummary`, `StoredMessage` types in `synapse-core/src/session.rs`
   - `SessionStore` trait defining storage abstraction with CRUD operations

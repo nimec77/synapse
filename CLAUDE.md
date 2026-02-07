@@ -199,3 +199,4 @@ Ticket artifacts live in: `docs/prd/`, `docs/research/`, `docs/plan/`, `docs/tas
 | SY-7 | DeepSeek Provider | DeepSeekProvider with OpenAI-compatible API, provider factory pattern |
 | SY-8 | Streaming Responses | Token-by-token streaming via SSE, DeepSeekProvider streaming, Ctrl+C handling |
 | SY-9 | Session Storage | SQLite persistence, SessionStore trait, session commands, auto-cleanup |
+| SY-10 | CLI REPL | Interactive TUI with ratatui/crossterm, multi-turn conversations, streaming, session resume |
