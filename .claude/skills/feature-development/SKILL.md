@@ -39,8 +39,12 @@ Execute each missing gate in order. **You MUST use the Skill or Task tool** as s
   - Header: "PRD Done"
   - Options:
     - Label: "Continue to Planning", Description: "Proceed to research the codebase and create implementation plan"
-    - Label: "Stop here", Description: "Pause workflow to review PRD before continuing"
-  - If user selects "Stop here": terminate workflow with message "Workflow paused after PRD. Run `/feature-development $1` to resume."
+    - Label: "Pause to review", Description: "Pause to review before continuing"
+  - If user selects "Pause to review": Use AskUserQuestion again:
+    - Question: "Take your time reviewing the PRD. Select 'Continue' when ready."
+    - Header: "Paused"
+    - Options: "Continue" (proceed to planning) / "Still reviewing" (re-prompt this question)
+    - Loop until user selects "Continue", then proceed to Gate 2.
 
 #### Gate 2: PLAN_APPROVED
 - **Condition**: Plan file `docs/plan/$1.md` does not exist
@@ -53,8 +57,12 @@ Execute each missing gate in order. **You MUST use the Skill or Task tool** as s
   - Header: "Plan Done"
   - Options:
     - Label: "Continue to Implementation", Description: "Break down plan into tasks and start implementation"
-    - Label: "Stop here", Description: "Pause workflow to review plan before continuing"
-  - If user selects "Stop here": terminate workflow with message "Workflow paused after planning. Run `/feature-development $1` to resume."
+    - Label: "Pause to review", Description: "Pause to review before continuing"
+  - If user selects "Pause to review": Use AskUserQuestion again:
+    - Question: "Take your time reviewing the plan. Select 'Continue' when ready."
+    - Header: "Paused"
+    - Options: "Continue" (proceed to tasklist and implementation) / "Still reviewing" (re-prompt this question)
+    - Loop until user selects "Continue", then proceed to Gate 3.
 
 #### Gate 3: TASKLIST_READY
 - **Condition**: Tasklist file `docs/tasklist/$1.md` does not exist
@@ -75,8 +83,12 @@ Execute each missing gate in order. **You MUST use the Skill or Task tool** as s
   - Header: "Code Done"
   - Options:
     - Label: "Continue to Review", Description: "Proceed to code review, QA, and documentation"
-    - Label: "Stop here", Description: "Pause workflow to manually test implementation"
-  - If user selects "Stop here": terminate workflow with message "Workflow paused after implementation. Run `/feature-development $1` to resume."
+    - Label: "Pause to review", Description: "Pause to review before continuing"
+  - If user selects "Pause to review": Use AskUserQuestion again:
+    - Question: "Take your time reviewing the implementation. Select 'Continue' when ready."
+    - Header: "Paused"
+    - Options: "Continue" (proceed to review and QA) / "Still reviewing" (re-prompt this question)
+    - Loop until user selects "Continue", then proceed to Gate 5.
 
 #### Gate 5: REVIEW_OK
 - **Condition**: Implementation gate passed
@@ -155,7 +167,7 @@ Invoke Skill tool with `skill: "init"` to regenerate the `CLAUDE.md` file with a
 - **NEVER PAUSE AFTER TOOL RETURNS**: When a Skill or Task tool completes and returns output, you MUST immediately continue to the next instruction. The ONLY way to pause is via AskUserQuestion at designated checkpoints.
 - Execute gates sequentially - each depends on the previous
 - **Checkpoints**: Use AskUserQuestion at designated checkpoints (after PRD, Plan, Implementation) to let users pause or continue. Always use the structured AskUserQuestion tool - never just output text asking for confirmation.
-- If user selects "Stop here" at any checkpoint, terminate immediately with the specified message
+- If user selects "Pause to review" at any checkpoint, re-prompt with AskUserQuestion until they select "Continue". Never terminate the workflow at intermediate checkpoints.
 - If any gate fails, stop and report the issue
 - Description file sync happens only after successful completion of all gates
 - **Review loop**: Gate 5 can loop back to Gate 4 if fixes are requested. Track loop count to prevent infinite loops.
