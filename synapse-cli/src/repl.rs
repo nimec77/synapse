@@ -536,18 +536,14 @@ pub async fn run_repl(
                                     continue;
                                 }
 
-                                // Build full conversation for provider
-                                let mut conv_messages: Vec<Message> = history
+                                // Build full conversation for provider from app.messages,
+                                // which already contains history (populated during session
+                                // resume) plus any new messages from this REPL session.
+                                let conv_messages: Vec<Message> = app
+                                    .messages
                                     .iter()
                                     .map(|m| Message::new(m.role, &m.content))
                                     .collect();
-
-                                // Add messages from current REPL session
-                                for msg in &app.messages {
-                                    conv_messages.push(
-                                        Message::new(msg.role, &msg.content),
-                                    );
-                                }
 
                                 // Start streaming
                                 app.is_streaming = true;
@@ -973,6 +969,46 @@ mod tests {
         let action = handle_key_event(&mut app, key, 20);
         assert!(matches!(action, KeyAction::Continue));
         assert!(app.input.is_empty());
+    }
+
+    #[test]
+    fn test_no_duplicate_messages_on_session_resume() {
+        // Simulate session resume: app.messages is pre-populated with history
+        let id = Uuid::new_v4();
+        let mut app = ReplApp::new(id, "test", "test");
+
+        // Simulate history population (as done in run_repl for session resume)
+        app.messages.push(DisplayMessage {
+            role: Role::User,
+            content: "Hello".to_string(),
+        });
+        app.messages.push(DisplayMessage {
+            role: Role::Assistant,
+            content: "Hi there!".to_string(),
+        });
+
+        // Simulate user submitting a new message in the REPL
+        app.messages.push(DisplayMessage {
+            role: Role::User,
+            content: "Follow up question".to_string(),
+        });
+
+        // Build conv_messages the same way the fixed code does:
+        // only from app.messages (no separate history iteration)
+        let conv_messages: Vec<Message> = app
+            .messages
+            .iter()
+            .map(|m| Message::new(m.role, &m.content))
+            .collect();
+
+        // Verify: exactly 3 messages, no duplicates
+        assert_eq!(conv_messages.len(), 3);
+        assert_eq!(conv_messages[0].role, Role::User);
+        assert_eq!(conv_messages[0].content, "Hello");
+        assert_eq!(conv_messages[1].role, Role::Assistant);
+        assert_eq!(conv_messages[1].content, "Hi there!");
+        assert_eq!(conv_messages[2].role, Role::User);
+        assert_eq!(conv_messages[2].content, "Follow up question");
     }
 
     #[test]

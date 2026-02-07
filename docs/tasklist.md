@@ -23,14 +23,14 @@
 | 6. DeepSeek Provider (SY-7) | ✅ Complete | 5/5 |
 | 7. Streaming Responses (SY-8) | ✅ Complete | 4/4 |
 | 8. Session Storage (SY-9) | ✅ Complete | 7/7 |
-| 9. CLI REPL | ⬜ Not Started | 0/4 |
+| 9. CLI REPL (SY-10) | ✅ Complete | 4/4 |
 | 10. OpenAI Provider | ⬜ Not Started | 0/3 |
 | 11. MCP Integration | ⬜ Not Started | 0/5 |
 | 12. Telegram Bot | ⬜ Not Started | 0/4 |
 
 **Legend:** ⬜ Not Started | 🔄 In Progress | ✅ Complete | ⏸️ Blocked
 
-**Current Phase:** 9
+**Current Phase:** 10
 **Last Updated:** 2026-02-07
 
 ---
@@ -154,10 +154,10 @@
 
 **Goal:** Interactive chat mode.
 
-- [ ] 9.1 Add `ratatui` + `crossterm` to CLI
-- [ ] 9.2 Create `synapse-cli/src/repl.rs` with input loop
-- [ ] 9.3 Implement `--repl` flag to enter interactive mode
-- [ ] 9.4 Add session resume: `synapse --repl --session <id>`
+- [x] 9.1 Add `ratatui` + `crossterm` to CLI
+- [x] 9.2 Create `synapse-cli/src/repl.rs` with input loop
+- [x] 9.3 Implement `--repl` flag to enter interactive mode
+- [x] 9.4 Add session resume: `synapse --repl --session <id>`
 
 **Test:** `synapse --repl` allows multi-turn conversation with history.
 
