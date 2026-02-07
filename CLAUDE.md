@@ -4,168 +4,184 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Synapse is a Rust-based AI agent that serves as a unified interface to interact with multiple LLM providers (Anthropic Claude, OpenAI, etc.). The project targets multiple interfaces: CLI (primary), Telegram bot, and backend service.
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────┐
-│           Interface Layer (CLI/Telegram)            │
-├─────────────────────────────────────────────────────┤
-│         Core Agent & Shared Library                 │
-├─────────────────────────────────────────────────────┤
-│  LLM Provider Abstraction (Claude, OpenAI, etc.)    │
-├─────────────────────────────────────────────────────┤
-│  Session Memory & Configuration Management          │
-└─────────────────────────────────────────────────────┘
-```
-
-**Key design principles:**
-- Shared core library with common agent logic
-- Separate interface implementations that consume the core library
-- Provider-agnostic LLM abstraction layer
-- TOML-based configuration for API keys, provider selection, and system prompts
-- Session-based conversation memory for multi-turn dialogues
+Synapse is a Rust-based AI agent that serves as a unified interface to interact with multiple LLM providers (Anthropic Claude, DeepSeek, OpenAI). The project targets multiple interfaces: CLI (primary), Telegram bot, and backend service. LLM providers are implemented from scratch (no rig/genai/async-openai) for learning depth and full control.
 
 ## Build Commands
 
 ```bash
-# Build the entire workspace
-cargo build
-
-# Build in release mode
-cargo build --release
-
-# Run tests
-cargo test
-
-# Run a specific test
-cargo test test_name
-
-# Run tests for a specific crate
-cargo test -p crate_name
-
-# Check code without building
-cargo check
-
-# Format code
-cargo fmt
-
-# Run linter
-cargo clippy
+cargo build                    # Build workspace
+cargo build --release          # Release build
+cargo test                     # Run all tests
+cargo test test_name           # Run specific test
+cargo test -p synapse-core     # Run tests for one crate
+cargo check                    # Type-check without building
+cargo fmt                      # Format code
+cargo clippy -- -D warnings    # Lint (CI runs with -D warnings)
 ```
 
-## CI/CD
-
-The project uses GitHub Actions for continuous integration. CI runs automatically on:
-- Push to `master` and `feature/*` branches
-- Pull requests targeting `master`
-
-**CI Jobs:**
-- `check`: Format check, Clippy lint, tests
-- `audit`: Security vulnerability scanning (cargo-audit)
-
-**Local pre-commit checks:**
+**Pre-commit (required before every commit):**
 ```bash
-cargo fmt --check
-cargo clippy -- -D warnings
-cargo test
+cargo fmt --check && cargo clippy -- -D warnings && cargo test
 ```
+
+## Architecture
+
+Hexagonal architecture (ports and adapters). Core defines traits (ports), implementations are adapters.
+
+```
+synapse-cli / synapse-telegram      ← Interface binaries (use anyhow for errors)
+        │
+        ▼
+    synapse-core                    ← Shared library (uses thiserror for errors)
+        │
+   ┌────┼────────────┐
+   ▼    ▼            ▼
+LlmProvider  SessionStore   (future: McpClient)
+ (trait)      (trait)
+   │            │
+   ▼            ▼
+Anthropic    SqliteStore
+DeepSeek
+Mock
+```
+
+**Critical rule:** `synapse-core` never imports from interface crates. Dependencies flow inward only.
+
+### Core Traits
+
+**LlmProvider** (`synapse-core/src/provider.rs`) — the central abstraction:
+```rust
+#[async_trait]
+pub trait LlmProvider: Send + Sync {
+    async fn complete(&self, messages: &[Message]) -> Result<Message, ProviderError>;
+    fn stream(&self, messages: &[Message])
+        -> Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send + '_>>;
+}
+```
+
+**SessionStore** (`synapse-core/src/storage.rs`) — persistence port:
+```rust
+#[async_trait]
+pub trait SessionStore: Send + Sync {
+    async fn create_session(&self, session: &Session) -> Result<(), StorageError>;
+    async fn get_session(&self, id: Uuid) -> Result<Option<Session>, StorageError>;
+    async fn list_sessions(&self) -> Result<Vec<SessionSummary>, StorageError>;
+    async fn touch_session(&self, id: Uuid) -> Result<(), StorageError>;
+    async fn delete_session(&self, id: Uuid) -> Result<bool, StorageError>;
+    async fn add_message(&self, message: &StoredMessage) -> Result<(), StorageError>;
+    async fn get_messages(&self, session_id: Uuid) -> Result<Vec<StoredMessage>, StorageError>;
+    async fn cleanup(&self, config: &SessionConfig) -> Result<CleanupResult, StorageError>;
+}
+```
+
+### Streaming
+
+Providers return `Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send>>`. The `StreamEvent` enum (`provider/streaming.rs`):
+- `TextDelta(String)` — token fragment
+- `ToolCall { id, name, input }` — future MCP support
+- `ToolResult { id, output }` — future MCP support
+- `Done` — stream complete
+- `Error(ProviderError)`
+
+CLI consumes streams with `tokio::select!` for Ctrl+C handling. Uses `async_stream::stream!` macro and `eventsource-stream` for SSE parsing.
+
+### Provider Factory
+
+`create_provider(config) -> Box<dyn LlmProvider>` in `provider/factory.rs`. API key resolution: **env var > config file** (e.g., `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`). Provider selection by `config.provider` string: `"deepseek"`, `"anthropic"`, `"mock"`.
+
+### Config Loading
+
+Priority (highest first):
+1. `$SYNAPSE_CONFIG` env var path
+2. `./config.toml` (local directory)
+3. `~/.config/synapse/config.toml` (user default)
+
+### Storage
+
+SQLite via `sqlx` with WAL mode, connection pooling (max 5), automatic migrations. Database URL priority: `$DATABASE_URL` > `session.database_url` in config > default `sqlite:~/.config/synapse/sessions.db`. Uses UUID v7 (time-sortable) and RFC3339 timestamps. `create_storage(config) -> Box<dyn SessionStore>` factory in `storage/sqlite.rs`.
+
+### Error Types
+
+Three `thiserror` enums in `synapse-core`:
+- **`ProviderError`** (`provider.rs`): `ProviderError`, `RequestFailed`, `AuthenticationError`, `MissingApiKey`, `UnknownProvider`
+- **`StorageError`** (`storage.rs`): `Database`, `NotFound(Uuid)`, `Migration`, `InvalidData`
+- **`ConfigError`** (`config.rs`): `IoError`, `ParseError`
+
+Interface crates use `anyhow` and `.context()` for error wrapping.
 
 ## Code Conventions
 
 ### Module System
-Use the **new Rust module system** (Rust 2018+). Do NOT use `mod.rs` files.
+Use the **new Rust module system** (Rust 2018+). **Never use `mod.rs` files.**
 
 ```
-# Correct (new style)
+# Correct: parent file declares submodules
 src/
-├── provider.rs        # declares: mod anthropic; mod openai;
+├── provider.rs        # declares: mod anthropic; mod deepseek;
 └── provider/
     ├── anthropic.rs
-    └── openai.rs
-
-# Incorrect (old style) - DO NOT USE
-src/
-└── provider/
-    ├── mod.rs         # ❌ Never use mod.rs
-    ├── anthropic.rs
-    └── openai.rs
+    └── deepseek.rs
 ```
 
-## Key Technology Decisions
-
-- **Rust**: Nightly, Edition 2024
-- **LLM Providers**: Custom implementation (no rig/genai/async-openai) for learning depth
-- **Async Runtime**: Tokio
-- **Error Handling**: `thiserror` for library errors, `anyhow` for application errors
-- **Configuration**: `toml` + `serde` for TOML parsing, `dirs` for cross-platform paths
-- **Session Storage**: SQLite via `sqlx` (supports switching to PostgreSQL/MySQL)
-- **Streaming**: SSE streaming via `eventsource-stream` + `async-stream`
-- **MCP**: Model Context Protocol support via `rmcp`
-- **CLI**: `clap` for args, `ratatui` for REPL UI
+### Key Rules (from `docs/conventions.md`)
+- Group imports: `std` → external → internal (blank lines between)
+- No `unwrap()`/`expect()` in `synapse-core` — propagate with `?`
+- No blocking I/O in async functions (use `tokio::time::sleep`, not `std::thread::sleep`)
+- `thiserror` in core, `anyhow` in CLI/Telegram
+- Test naming: `test_<function>_<scenario>`
+- `#[tokio::test]` for async tests
+- 100 character line limit
 
 ## Workspace Crates
 
 | Crate | Purpose |
 |-------|---------|
-| `synapse-core` | Core library: config, agent, providers, storage, MCP |
-| `synapse-cli` | CLI binary: REPL and one-shot modes |
-| `synapse-telegram` | Telegram bot interface |
+| `synapse-core` | Core library: config, providers, storage, message types |
+| `synapse-cli` | CLI binary: one-shot, stdin, and session modes via `clap` |
+| `synapse-telegram` | Telegram bot interface (placeholder) |
 
-## Project Status
+## CI/CD
 
-This project is in early development.
+GitHub Actions on push to `master`/`feature/*` and PRs to `master`:
+- **check**: `cargo fmt --check` → `cargo clippy -- -D warnings` → `cargo test`
+- **audit**: `rustsec/audit-check` for vulnerability scanning
+
+## Key Technology Decisions
+
+- **Rust**: Nightly, Edition 2024, resolver v3
+- **Async Runtime**: Tokio (multi-thread)
+- **HTTP**: `reqwest` with `json` + `stream` features
+- **SSE**: `eventsource-stream` + `async-stream`
+- **Database**: `sqlx` with `runtime-tokio` + `sqlite` features
+- **CLI**: `clap` for args, `ratatui` + `crossterm` for REPL UI
+- **MCP**: `rmcp` for Model Context Protocol (future)
+- **IDs**: `uuid` v4/v7
 
 ## Documentation
 
-| Document | Purpose |
-|----------|---------|
-| `docs/idea.md` | Project concept and goals |
-| `docs/vision.md` | Technical architecture and design decisions |
-| `docs/conventions.md` | Code rules: DO and DON'T |
-| `docs/tasklist.md` | Development plan with progress tracking |
-| `docs/workflow.md` | Step-by-step collaboration process |
-| `docs/phase/phase-*.md` | Phase-specific task breakdowns |
-| `config.example.toml` | Example configuration file with documentation |
-| `docs/prd/` | PRD documents for each ticket (e.g., `SY-1.prd.md`) |
-| `docs/prd.template.md` | Template for creating new PRDs |
-| `docs/research/` | Research documents for each ticket |
-| `docs/plan/` | Implementation plans for each ticket |
-| `docs/tasklist/` | Task breakdowns for each ticket |
-| `docs/summary/` | Completion summaries for each ticket |
-| `docs/.active_ticket` | Current active ticket identifier |
-| `reports/qa/` | QA reports for each ticket |
-| `CHANGELOG.md` | Project changelog |
+Essential docs to read before working:
+1. `docs/.active_ticket` — current ticket ID
+2. `docs/prd/<ticket>.prd.md` — requirements for current feature
+3. `docs/tasklist.md` — development plan with progress tracking
+4. `docs/vision.md` — full technical architecture
+5. `docs/conventions.md` — code rules (DO and DON'T)
+6. `docs/workflow.md` — step-by-step collaboration process with quality gates
+
+Ticket artifacts live in: `docs/prd/`, `docs/research/`, `docs/plan/`, `docs/tasklist/`, `docs/summary/`, `reports/qa/`.
 
 ## Workflow
 
-**Starting a new feature (full automated workflow):**
+**Starting a new feature (full automated):**
 ```
 /feature-development SY-<N> "Title" @docs/<description>.md
 ```
-This runs the complete workflow: PRD → Research → Plan → Tasks → Implementation → Review → QA → Docs.
 
 **Starting a new feature (manual):**
 ```
 /analysis SY-<N> "Title" @docs/<description>.md
 ```
-This creates a PRD in `docs/prd/SY-<N>.prd.md` and sets `docs/.active_ticket`.
 
-**Before starting any task**, read these in order:
-1. `docs/.active_ticket` — current ticket being worked on
-2. `docs/prd/<ticket>.prd.md` — PRD for the current feature
-3. `docs/tasklist.md` — find current phase and next task
-4. `docs/vision.md` — understand relevant architecture
-5. `docs/conventions.md` — rules to follow
-
-**Follow `docs/workflow.md` strictly:**
-1. **Propose** solution with code snippets → wait for approval
-2. **Implement** → verify with `cargo check/test/clippy`
-3. **Commit** → update `tasklist.md` → wait for confirmation
-4. **Next task** → ask before proceeding
-
-**Three mandatory checkpoints — never skip:**
+**Follow `docs/workflow.md` strictly. Three mandatory checkpoints — never skip:**
 - "Proceed with this approach?"
 - "Ready to commit?"
 - "Continue to next task?"

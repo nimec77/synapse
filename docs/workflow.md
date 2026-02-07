@@ -14,8 +14,8 @@ Features progress through a series of quality gates, each producing specific art
 └─────────────────────────────────────────────────────────────────────────────┘
 
   ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
-  │ ANALYSIS │───▶│ RESEARCH │───▶│   PLAN   │───▶│  TASKS   │
-  │ /analysis│    │ /research│    │  /plan   │    │  /tasks  │
+  │ ANALYSIS │───▶│ RESEARCH │───▶│   PLAN   │───▶│ TASKLIST │
+  │ /analysis│    │ /research│    │  /plan   │    │/tasklist │
   └──────────┘    └──────────┘    └──────────┘    └──────────┘
        │               │               │               │
        ▼               ▼               ▼               ▼
@@ -130,7 +130,7 @@ Run these individually when you need fine-grained control:
 
 ---
 
-#### `/tasks`
+#### `/tasklist`
 **Purpose:** Break down the plan into actionable tasks.
 
 **What it does:**
@@ -139,9 +139,9 @@ Run these individually when you need fine-grained control:
 3. Each task has 1-2 acceptance criteria
 4. Sets `Status: TASKLIST_READY` when complete
 
-**Usage:** `/tasks <ticket-id>`
+**Usage:** `/tasklist <ticket-id>`
 
-**Example:** `/tasks IF-2`
+**Example:** `/tasklist IF-2`
 
 ---
 
@@ -238,12 +238,12 @@ echo "IF-2" > docs/.active_ticket
 
 **Error:** `Error: Plan for ticket <ticket> is not approved. Run /plan to create and approve the plan first.`
 
-**Cause:** Attempted to run `/tasks` before the plan was approved.
+**Cause:** Attempted to run `/tasklist` before the plan was approved.
 
 **Solution:**
 1. Run `/plan <ticket-id>` to create or complete the plan
 2. Ensure the plan contains `Status: PLAN_APPROVED`
-3. Re-run `/tasks`
+3. Re-run `/tasklist`
 
 ---
 
@@ -454,7 +454,7 @@ The active ticket is stored in `docs/.active_ticket`. Most commands will read fr
 /analysis IF-2 "CLI Arguments" docs/phase/phase-2.md
 /research IF-2
 /plan IF-2
-/tasks IF-2
+/tasklist IF-2
 /implement-orchestrated IF-2
 /run-reviewer IF-2
 /qa IF-2
