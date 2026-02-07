@@ -1,5 +1,7 @@
 //! Synapse CLI - Command-line interface for the Synapse AI agent.
 
+mod repl;
+
 use std::io::{self, IsTerminal, Read, Write};
 
 use anyhow::{Context, Result, bail};
@@ -22,6 +24,10 @@ struct Args {
     /// Continue an existing session by ID
     #[arg(short, long)]
     session: Option<Uuid>,
+
+    /// Enter interactive REPL mode
+    #[arg(short, long)]
+    repl: bool,
 
     /// Session management commands
     #[command(subcommand)]
@@ -61,6 +67,21 @@ async fn main() -> Result<()> {
     // Handle subcommands
     if let Some(command) = args.command {
         return handle_command(command).await;
+    }
+
+    // Handle REPL mode
+    if args.repl {
+        let session_config = config.session.clone().unwrap_or_default();
+        let storage = create_storage(session_config.database_url.as_deref())
+            .await
+            .context("Failed to create storage")?;
+
+        if session_config.auto_cleanup {
+            let _ = storage.cleanup(&session_config).await;
+        }
+
+        let provider = create_provider(&config).context("Failed to create LLM provider")?;
+        return repl::run_repl(&config, provider, storage, args.session).await;
     }
 
     // Get message or show help
@@ -349,5 +370,33 @@ mod tests {
         assert_eq!(truncate("hello world", 8), "hello...");
         assert_eq!(truncate("hi", 2), "hi");
         assert_eq!(truncate("hello", 3), "...");
+    }
+
+    #[test]
+    fn test_args_repl_flag() {
+        let args = Args::parse_from(["synapse", "--repl"]);
+        assert!(args.repl);
+        assert!(args.message.is_none());
+        assert!(args.session.is_none());
+    }
+
+    #[test]
+    fn test_args_repl_short_flag() {
+        let args = Args::parse_from(["synapse", "-r"]);
+        assert!(args.repl);
+    }
+
+    #[test]
+    fn test_args_repl_with_session() {
+        let id = Uuid::new_v4();
+        let args = Args::parse_from(["synapse", "--repl", "--session", &id.to_string()]);
+        assert!(args.repl);
+        assert_eq!(args.session, Some(id));
+    }
+
+    #[test]
+    fn test_args_repl_default_false() {
+        let args = Args::parse_from(["synapse", "Hello"]);
+        assert!(!args.repl);
     }
 }
