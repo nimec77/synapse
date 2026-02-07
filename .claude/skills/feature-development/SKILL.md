@@ -7,188 +7,184 @@ model: inherit
 
 You are the orchestrator of feature `$1` ("$ARGUMENTS").
 
-## Workflow
+## EXECUTION CONTRACT
 
-Execute the feature development workflow by running each gate in sequence until all gates pass. After every Task tool returns, immediately continue to the next numbered step — never stop between steps.
+**You MUST execute every numbered step below in sequence. After every tool return (Task, AskUserQuestion, Skill, Glob), immediately proceed to the next step. The ONLY valid stopping point is the "WORKFLOW COMPLETE" marker at the end. Stopping before WORKFLOW COMPLETE is a contract violation. If any gate fails, stop and report the failure — that is the only other valid stop.**
 
-### Step 1: Check Current Status
+---
 
-Check which artifacts exist for ticket `$1`:
+### 1. Check current status
+
+Use Glob to check which artifacts already exist for ticket `$1`:
 - PRD: `docs/prd/$1.prd.md`
 - Plan: `docs/plan/$1.md`
 - Tasklist: `docs/tasklist/$1.md`
 - QA Report: `reports/qa/$1.md`
 - Summary: `docs/summaries/$1-summary.md`
 
-### Step 2: Execute Missing Gates
+**After Glob returns, execute step 2.**
 
-Execute each missing gate in order. **You MUST use the Task tool** as specified in each gate - do NOT perform the actions directly.
+---
 
-#### Gate 1: PRD_READY
-- **Condition**: PRD file `docs/prd/$1.prd.md` does not exist
-- **Steps** (execute in order, do not stop between steps):
-  1. Invoke Task tool:
-     - `subagent_type`: "general-purpose"
-     - `prompt`: "Create a PRD for ticket $1. Read `.claude/skills/analysis/SKILL.md` for instructions. Arguments: $1 $2 $3"
-     - `description`: "Create $1 PRD"
-  2. Invoke AskUserQuestion tool:
-     - question: "PRD has been created. Ready to proceed to research and planning phase?"
-     - header: "PRD Done"
-     - options:
-       - Label: "Continue to Planning", Description: "Proceed to research the codebase and create implementation plan"
-       - Label: "Pause to review", Description: "Pause to review before continuing"
-  3. If user selects "Pause to review" → invoke AskUserQuestion again:
-     - question: "Take your time reviewing the PRD. Select 'Continue' when ready."
-     - header: "Paused"
-     - options: "Continue" / "Still reviewing"
-     - Loop until user selects "Continue"
-  4. Proceed to Gate 2
+### 2. Gate: PRD
 
-#### Gate 2: PLAN_APPROVED
-- **Condition**: Plan file `docs/plan/$1.md` does not exist
-- **Steps** (execute in order, do not stop between steps):
-  1. Invoke Task tool:
-     - `subagent_type`: "general-purpose"
-     - `prompt`: "Research the codebase for ticket $1. Read `.claude/skills/research/SKILL.md` for instructions. Arguments: $1"
-     - `description`: "Research $1"
-  2. Invoke Task tool:
-     - `subagent_type`: "general-purpose"
-     - `prompt`: "Create an implementation plan for ticket $1. Read `.claude/skills/plan/SKILL.md` for instructions. Arguments: $1"
-     - `description`: "Plan $1"
-  3. Invoke AskUserQuestion tool:
-     - question: "Implementation plan has been created. Ready to proceed to task breakdown and implementation?"
-     - header: "Plan Done"
-     - options:
-       - Label: "Continue to Implementation", Description: "Break down plan into tasks and start implementation"
-       - Label: "Pause to review", Description: "Pause to review before continuing"
-  4. If user selects "Pause to review" → invoke AskUserQuestion again:
-     - question: "Take your time reviewing the plan. Select 'Continue' when ready."
-     - header: "Paused"
-     - options: "Continue" / "Still reviewing"
-     - Loop until user selects "Continue"
-  5. Proceed to Gate 3
+Skip if `docs/prd/$1.prd.md` exists. Otherwise:
 
-#### Gate 3: TASKLIST_READY
-- **Condition**: Tasklist file `docs/tasklist/$1.md` does not exist
-- **Steps** (execute in order, do not stop between steps):
-  1. Invoke Task tool:
-     - `subagent_type`: "general-purpose"
-     - `prompt`: "Create a tasklist for ticket $1. Read `.claude/skills/tasklist/SKILL.md` for instructions. Arguments: $1"
-     - `description`: "Create $1 tasklist"
-  2. Proceed to Gate 4
+**After this Task returns, execute step 3.**
 
-#### Gate 4: IMPLEMENT_STEP_OK
-- **Condition**: Tasklist contains incomplete tasks (unchecked items `- [ ]`)
-- **Steps** (execute in order, do not stop between steps):
-  1. Invoke Task tool:
-     - `subagent_type`: "general-purpose"
-     - `prompt`: "Execute the implement-orchestrated workflow for ticket $1. Read `.claude/skills/implement-orchestrated/SKILL.md` for instructions. Arguments: $1 --auto"
-     - `description`: "Implement $1 tasks"
-  2. Check context — are you in a review loop (came from Gate 5 with `REVIEW_NEEDS_FIXES`)?
-     - **If review loop**: skip to step 5 (return to Gate 5)
-     - **If initial implementation**: continue to step 3
-  3. Invoke AskUserQuestion tool:
-     - question: "Implementation is complete. Ready to proceed to code review and QA?"
-     - header: "Code Done"
-     - options:
-       - Label: "Continue to Review", Description: "Proceed to code review, QA, and documentation"
-       - Label: "Pause to review", Description: "Pause to review before continuing"
-  4. If user selects "Pause to review" → invoke AskUserQuestion again:
-     - question: "Take your time reviewing the implementation. Select 'Continue' when ready."
-     - header: "Paused"
-     - options: "Continue" / "Still reviewing"
-     - Loop until user selects "Continue"
-  5. Proceed to Gate 5
+- Task: `subagent_type: "general-purpose"`, `description: "Create $1 PRD"`, `prompt: "Create a PRD for ticket $1. Read '.claude/skills/analysis/SKILL.md' for instructions. Arguments: $1 $2 $3"`
 
-#### Gate 5: REVIEW_OK
-- **Condition**: Implementation gate passed
-- **Steps** (execute in order, do not stop between steps):
-  1. Invoke Task tool:
-     - `subagent_type`: "reviewer"
-     - `prompt`: "Review changes for ticket $1. Read `.claude/skills/run-reviewer/SKILL.md` for instructions. Arguments: $1"
-     - `description`: "Review $1 changes"
-  2. Parse the reviewer output for status:
-     - **If `REVIEW_BLOCKED` or `REVIEW_NEEDS_FIXES`:**
-       - Read tasklist to confirm new unchecked tasks exist
-       - Mark that you are now in a **review loop**
-       - Loop back to Gate 4 to implement review fixes
-       - After Gate 4, return here for re-review
-       - **Loop limit**: If review loop exceeds 3 iterations, terminate with: "Review loop exceeded 3 iterations. Manual intervention required."
-     - **If `REVIEW_OK`:**
-       - Clear the review loop marker
-       - Proceed to Gate 6
+---
 
-#### Gate 6: RELEASE_READY
-- **Condition**: QA Report file `reports/qa/$1.md` does not exist
-- **Steps** (execute in order, do not stop between steps):
-  1. Invoke Task tool:
-     - `subagent_type`: "qa"
-     - `prompt`: "Generate QA plan and report for ticket $1. Read `.claude/skills/qa/SKILL.md` for instructions. Arguments: $1"
-     - `description`: "QA for $1"
-  2. Proceed to Gate 7
+### 3. Checkpoint: PRD review
 
-#### Gate 7: DOCS_UPDATED
-- **Condition**: Summary file `docs/summaries/$1-summary.md` does not exist
-- **Steps** (execute in order, do not stop between steps):
-  1. Invoke Task tool:
-     - `subagent_type`: "tech-writer"
-     - `prompt`: "Update documentation for ticket $1. Read `.claude/skills/docs-update/SKILL.md` for instructions. Arguments: $1"
-     - `description`: "Update docs for $1"
-  2. Proceed to Step 3
+- AskUserQuestion:
+  - question: "PRD has been created. Ready to proceed to research and planning phase?"
+  - header: "PRD Done"
+  - options:
+    - Label: "Continue to Planning", Description: "Proceed to research the codebase and create implementation plan"
+    - Label: "Pause to review", Description: "Pause to review before continuing"
+- If "Pause to review": loop AskUserQuestion (question: "Take your time reviewing the PRD. Select 'Continue' when ready.", header: "Paused", options: "Continue" / "Still reviewing") until user selects "Continue".
 
-### Step 3: Confirm Completion
+**Checkpoint resolved. Execute step 4.**
 
-After all gates pass, invoke Skill tool with `skill: "validate"` and `args: "$1"` to confirm the feature is complete.
+---
 
-### Step 4: Sync Description File
+### 4. Gate: Research
 
-If a description file was provided (`$3` is not empty):
+Skip if `docs/plan/$1.md` exists (research feeds into the plan). Otherwise:
 
-1. **Read the description file** at the path specified by `$3`
+**After this Task returns, execute step 5.**
 
-2. **Check if it's a phase file or contains tasks:**
-   - File name matches pattern `phase-*.md` OR `phase-[0-9]*.md`
-   - OR file contains checkbox tasks (`- [ ]` or `- [x]`)
+- Task: `subagent_type: "general-purpose"`, `description: "Research $1"`, `prompt: "Research the codebase for ticket $1. Read '.claude/skills/research/SKILL.md' for instructions. Arguments: $1"`
 
-3. **If it contains tasks, verify and sync:**
-   - Read the completed tasklist from `docs/tasklist/$1.md`
-   - Compare tasks in the description file against actually completed tasks
-   - **If discrepancies found** (tasks in description file that were NOT completed):
-     - List the mismatched tasks
-     - Display error: "Error: The following tasks from the description file were not completed: [list]"
-     - Terminate execution immediately
-   - **If all tasks match:**
-     - Update the description file: change all `- [ ]` to `- [x]`
-     - Report: "Updated [filename]: marked N tasks as complete"
+---
 
-4. **Skip this step** if:
-   - `$3` is empty or not provided
-   - The file doesn't exist
-   - The file contains no checkbox tasks
+### 5. Gate: Plan
 
-### Step 5: Update CLAUDE.md
+Skip if `docs/plan/$1.md` exists. Otherwise:
 
-Invoke Skill tool with `skill: "init"` to regenerate the `CLAUDE.md` file with any new information from the completed iteration.
+**After this Task returns, execute step 6.**
 
-## Important
+- Task: `subagent_type: "general-purpose"`, `description: "Plan $1"`, `prompt: "Create an implementation plan for ticket $1. Read '.claude/skills/plan/SKILL.md' for instructions. Arguments: $1"`
 
-- Execute gates sequentially — each depends on the previous
-- Every gate uses a numbered **Steps** list. Execute all steps in order. Do not stop after a Task tool returns — continue to the next numbered step.
-- **Checkpoints**: Use AskUserQuestion at designated checkpoints (after PRD, Plan, Implementation) to let users pause or continue. Always use the structured AskUserQuestion tool — never just output text asking for confirmation.
-- If user selects "Pause to review" at any checkpoint, re-prompt with AskUserQuestion until they select "Continue". Never terminate the workflow at intermediate checkpoints.
-- If any gate fails, stop and report the issue
-- Description file sync happens only after successful completion of all gates
-- **Review loop**: Gate 5 can loop back to Gate 4 if fixes are requested. Track loop count to prevent infinite loops.
-- **Task tool for all gates**: All gates use Task tool (which creates separate agent context) to ensure proper return to parent workflow.
+---
 
-## Gate Flow Diagram
+### 6. Checkpoint: Plan review
 
-```
-PRD -> Plan -> Tasklist -> Implementation -> Review
-                              ^                |
-                              |                v
-                              +-- (if fixes) --+
-                                               |
-                                               v (if OK)
-                                              QA -> Docs -> Validate
-```
+- AskUserQuestion:
+  - question: "Implementation plan has been created. Ready to proceed to task breakdown and implementation?"
+  - header: "Plan Done"
+  - options:
+    - Label: "Continue to Implementation", Description: "Break down plan into tasks and start implementation"
+    - Label: "Pause to review", Description: "Pause to review before continuing"
+- If "Pause to review": loop AskUserQuestion (question: "Take your time reviewing the plan. Select 'Continue' when ready.", header: "Paused", options: "Continue" / "Still reviewing") until user selects "Continue".
+
+**Checkpoint resolved. Execute step 7.**
+
+---
+
+### 7. Gate: Tasklist
+
+Skip if `docs/tasklist/$1.md` exists. Otherwise:
+
+**After this Task returns, execute step 8.**
+
+- Task: `subagent_type: "general-purpose"`, `description: "Create $1 tasklist"`, `prompt: "Create a tasklist for ticket $1. Read '.claude/skills/tasklist/SKILL.md' for instructions. Arguments: $1"`
+
+---
+
+### 8. Gate: Implementation
+
+Skip if tasklist `docs/tasklist/$1.md` contains no unchecked items (`- [ ]`). Otherwise:
+
+**After this Task returns, execute step 9.**
+
+- Task: `subagent_type: "general-purpose"`, `description: "Implement $1 tasks"`, `prompt: "Execute the implement-orchestrated workflow for ticket $1. Read '.claude/skills/implement-orchestrated/SKILL.md' for instructions. Arguments: $1 --auto"`
+
+---
+
+### 9. Checkpoint: Implementation review
+
+Skip if currently in a review loop (returning from step 10). Otherwise:
+
+- AskUserQuestion:
+  - question: "Implementation is complete. Ready to proceed to code review and QA?"
+  - header: "Code Done"
+  - options:
+    - Label: "Continue to Review", Description: "Proceed to code review, QA, and documentation"
+    - Label: "Pause to review", Description: "Pause to review before continuing"
+- If "Pause to review": loop AskUserQuestion (question: "Take your time reviewing the implementation. Select 'Continue' when ready.", header: "Paused", options: "Continue" / "Still reviewing") until user selects "Continue".
+
+**Checkpoint resolved. Execute step 10.**
+
+---
+
+### 10. Gate: Review
+
+**After this Task returns, parse the reviewer output and decide: loop or continue.**
+
+- Task: `subagent_type: "general-purpose"`, `description: "Review $1 changes"`, `prompt: "Review changes for ticket $1. Read '.claude/skills/run-reviewer/SKILL.md' for instructions. Arguments: $1"`
+
+**Decision after Task returns:**
+- If `REVIEW_BLOCKED` or `REVIEW_NEEDS_FIXES`: read tasklist to confirm new unchecked tasks exist, increment review loop counter, and **go back to step 8**. If loop count exceeds 3, stop with: "Review loop exceeded 3 iterations. Manual intervention required."
+- If `REVIEW_OK`: clear review loop state and **execute step 11**.
+
+---
+
+### 11. Gate: QA
+
+Skip if `reports/qa/$1.md` exists. Otherwise:
+
+**After this Task returns, execute step 12.**
+
+- Task: `subagent_type: "general-purpose"`, `description: "QA for $1"`, `prompt: "Generate QA plan and report for ticket $1. Read '.claude/skills/qa/SKILL.md' for instructions. Arguments: $1"`
+
+---
+
+### 12. Gate: Documentation
+
+Skip if `docs/summaries/$1-summary.md` exists. Otherwise:
+
+**After this Task returns, execute step 13.**
+
+- Task: `subagent_type: "general-purpose"`, `description: "Update docs for $1"`, `prompt: "Update documentation for ticket $1. Read '.claude/skills/docs-update/SKILL.md' for instructions. Arguments: $1"`
+
+---
+
+### 13. Validate
+
+**After this Skill returns, execute step 14.**
+
+- Skill: `skill: "validate"`, `args: "$1"`
+
+---
+
+### 14. Sync description file
+
+Skip if `$3` is empty, not provided, or the file does not exist.
+
+1. Read the description file at path `$3`.
+2. Check if it's a phase file (name matches `phase-*.md` or `phase-[0-9]*.md`) or contains checkbox tasks (`- [ ]` or `- [x]`).
+3. If it contains tasks:
+   - Read completed tasklist from `docs/tasklist/$1.md`.
+   - Compare tasks in description file against actually completed tasks.
+   - If discrepancies found (tasks in description file NOT completed): list mismatches, display error, and stop.
+   - If all tasks match: update description file changing all `- [ ]` to `- [x]`, report count.
+4. Skip if file contains no checkbox tasks.
+
+**After sync completes, execute step 15.**
+
+---
+
+### 15. Update CLAUDE.md
+
+**After this Skill returns, you have reached the end.**
+
+- Skill: `skill: "init"`
+
+---
+
+### WORKFLOW COMPLETE
+
+All gates have passed. Report final status to the user: feature `$1` is complete. List which gates were executed and which were skipped.
