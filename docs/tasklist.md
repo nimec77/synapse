@@ -25,13 +25,13 @@
 | 8. Session Storage (SY-9) | ✅ Complete | 7/7 |
 | 9. CLI REPL (SY-10) | ✅ Complete | 4/4 |
 | 10. OpenAI Provider | ✅ Complete | 3/3 |
-| 11. MCP Integration | ⬜ Not Started | 0/5 |
+| 11. MCP Integration | ✅ Complete | 5/5 |
 | 12. Telegram Bot | ⬜ Not Started | 0/4 |
 
 **Legend:** ⬜ Not Started | 🔄 In Progress | ✅ Complete | ⏸️ Blocked
 
-**Current Phase:** 11
-**Last Updated:** 2026-02-07
+**Current Phase:** 12
+**Last Updated:** 2026-02-08
 
 ---
 
@@ -179,11 +179,11 @@
 
 **Goal:** Tool calling via Model Context Protocol.
 
-- [ ] 11.1 Add `rmcp` dependency to core
-- [ ] 11.2 Create `synapse-core/src/mcp.rs` with `McpClient` struct
-- [ ] 11.3 Load MCP server configs from `mcp_servers.json`
-- [ ] 11.4 Implement tool discovery and registration
-- [ ] 11.5 Handle tool calls in agent loop: detect → execute → return result
+- [x] 11.1 Add `rmcp` dependency to core
+- [x] 11.2 Create `synapse-core/src/mcp.rs` with `McpClient` struct
+- [x] 11.3 Load MCP server configs from `mcp_servers.json`
+- [x] 11.4 Implement tool discovery and registration
+- [x] 11.5 Handle tool calls in agent loop: detect → execute → return result
 
 **Test:** Configure a simple MCP server, ask the LLM to use it.
 
