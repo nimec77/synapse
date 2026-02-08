@@ -86,6 +86,43 @@ impl AnthropicProvider {
                             content: Some(m.content.clone()),
                         }]),
                     }
+                } else if let Some(tool_calls) = m.tool_calls.as_ref()
+                    && m.role == Role::Assistant
+                    && !tool_calls.is_empty()
+                {
+                    // Assistant message with tool calls: serialize as content blocks
+                    let mut blocks = Vec::new();
+
+                    // Include text content if non-empty
+                    if !m.content.is_empty() {
+                        blocks.push(ContentBlock {
+                            content_type: "text".to_string(),
+                            text: Some(m.content.clone()),
+                            id: None,
+                            name: None,
+                            input: None,
+                            tool_use_id: None,
+                            content: None,
+                        });
+                    }
+
+                    // Add tool_use blocks
+                    for tc in tool_calls {
+                        blocks.push(ContentBlock {
+                            content_type: "tool_use".to_string(),
+                            text: None,
+                            id: Some(tc.id.clone()),
+                            name: Some(tc.name.clone()),
+                            input: Some(tc.input.clone()),
+                            tool_use_id: None,
+                            content: None,
+                        });
+                    }
+
+                    ApiMessage {
+                        role: "assistant".to_string(),
+                        content: ApiContent::Blocks(blocks),
+                    }
                 } else {
                     ApiMessage {
                         role: match m.role {
@@ -590,5 +627,44 @@ mod tests {
 
         let json = serde_json::to_value(&request).unwrap();
         assert!(json.get("tools").is_none());
+    }
+
+    #[test]
+    fn test_assistant_tool_call_message_serialization() {
+        let mut assistant_msg = Message::new(Role::Assistant, "I'll check the weather.");
+        assistant_msg.tool_calls = Some(vec![ToolCallData {
+            id: "call_1".to_string(),
+            name: "get_weather".to_string(),
+            input: serde_json::json!({"location": "London"}),
+        }]);
+
+        let messages = vec![
+            Message::new(Role::User, "What's the weather?"),
+            assistant_msg,
+        ];
+
+        let api_messages = AnthropicProvider::build_api_messages(&messages);
+        assert_eq!(api_messages.len(), 2);
+
+        // Assistant message with tool calls should have content blocks
+        assert_eq!(api_messages[1].role, "assistant");
+        if let ApiContent::Blocks(blocks) = &api_messages[1].content {
+            assert_eq!(blocks.len(), 2);
+
+            // First block is text
+            assert_eq!(blocks[0].content_type, "text");
+            assert_eq!(blocks[0].text, Some("I'll check the weather.".to_string()));
+
+            // Second block is tool_use
+            assert_eq!(blocks[1].content_type, "tool_use");
+            assert_eq!(blocks[1].id, Some("call_1".to_string()));
+            assert_eq!(blocks[1].name, Some("get_weather".to_string()));
+            assert_eq!(
+                blocks[1].input,
+                Some(serde_json::json!({"location": "London"}))
+            );
+        } else {
+            panic!("Expected Blocks content for assistant tool call message");
+        }
     }
 }

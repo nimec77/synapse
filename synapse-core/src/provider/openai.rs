@@ -53,10 +53,28 @@ impl OpenAiProvider {
                     Role::Tool => "tool".to_string(),
                 };
 
+                // Convert tool_calls from Message format to OpenAI API format
+                let tool_calls = m
+                    .tool_calls
+                    .as_ref()
+                    .filter(|tc| !tc.is_empty())
+                    .map(|tcs| {
+                        tcs.iter()
+                            .map(|tc| OpenAiToolCall {
+                                id: tc.id.clone(),
+                                call_type: "function".to_string(),
+                                function: OpenAiToolCallFunction {
+                                    name: tc.name.clone(),
+                                    arguments: tc.input.to_string(),
+                                },
+                            })
+                            .collect()
+                    });
+
                 ApiMessage {
                     role,
                     content: Some(m.content.clone()),
-                    tool_calls: None,
+                    tool_calls,
                     tool_call_id: m.tool_call_id.clone(),
                 }
             })
@@ -626,5 +644,35 @@ mod tests {
 
         let json = serde_json::to_value(&request).unwrap();
         assert!(json.get("tools").is_none());
+    }
+
+    #[test]
+    fn test_assistant_tool_call_message_serialization() {
+        let mut assistant_msg = Message::new(Role::Assistant, "");
+        assistant_msg.tool_calls = Some(vec![ToolCallData {
+            id: "call_1".to_string(),
+            name: "get_weather".to_string(),
+            input: serde_json::json!({"location": "London"}),
+        }]);
+
+        let messages = vec![
+            Message::new(Role::User, "What's the weather?"),
+            assistant_msg,
+        ];
+
+        let api_messages = OpenAiProvider::build_api_messages(&messages);
+        assert_eq!(api_messages.len(), 2);
+
+        // Assistant message should have tool_calls
+        assert_eq!(api_messages[1].role, "assistant");
+        let tool_calls = api_messages[1].tool_calls.as_ref().unwrap();
+        assert_eq!(tool_calls.len(), 1);
+        assert_eq!(tool_calls[0].id, "call_1");
+        assert_eq!(tool_calls[0].call_type, "function");
+        assert_eq!(tool_calls[0].function.name, "get_weather");
+
+        let args: serde_json::Value =
+            serde_json::from_str(&tool_calls[0].function.arguments).unwrap();
+        assert_eq!(args["location"], "London");
     }
 }

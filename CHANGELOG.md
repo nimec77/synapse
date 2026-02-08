@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **SY-12: MCP Integration** - Tool calling via Model Context Protocol with agent orchestration:
+  - MCP client infrastructure using `rmcp` crate with `TokioChildProcess` transport for stdio-based MCP servers
+  - `McpConfig` / `McpServerConfig` types parsing standard `mcp_servers.json` format (compatible with Claude Desktop / Windsurf)
+  - Config path resolution: `SYNAPSE_MCP_CONFIG` env var > `~/.config/synapse/mcp_servers.json`
+  - Tool discovery via `list_tools()` and unified tool registry mapping tool names to servers
+  - `ToolDefinition` provider-agnostic tool schema with per-provider serialization (Anthropic `input_schema`, OpenAI/DeepSeek `function.parameters`)
+  - `LlmProvider` trait extended with `complete_with_tools()` and `stream_with_tools()` (backward-compatible default implementations)
+  - Anthropic provider: native `tool_use` content blocks, `Role::Tool` translated to `user` role with `tool_result` blocks
+  - OpenAI provider: function calling format with streaming tool call delta accumulation
+  - DeepSeek provider: OpenAI-compatible tool calling format
+  - `Agent` orchestrator implementing detect-execute-return tool call loop (max 10 iterations safety limit)
+  - `AgentError` enum wrapping `ProviderError`, `McpError`, and `MaxIterationsExceeded`
+  - `Role::Tool` variant added to `Role` enum; `ToolCallData` struct for tool call metadata
+  - `Message` extended with `tool_calls` and `tool_call_id` optional fields (backward compatible)
+  - `StoredMessage` extended with `tool_calls` and `tool_results` JSON text columns
+  - Database migration adding `tool_calls` and `tool_results` nullable columns to `messages` table
+  - `McpError` enum with `ConfigError`, `ConnectionError`, `ToolError`, `IoError` variants
+  - `MockProvider::with_tool_call_response()` builder for testing agent loop without real providers
+  - CLI one-shot and REPL modes integrated with Agent wrapper; `Role::Tool` displayed as `[TOOL]`
+  - Graceful degradation: without `mcp_servers.json`, behavior identical to pre-MCP
+  - 48 new tests (data model, config, client, all 3 providers, mock, agent, storage, CLI)
+  - Dependencies: `rmcp` 0.14 (client, transport-child-process, transport-io), tokio `process` feature
+
 - **SY-11: OpenAI Provider** - OpenAI Chat Completions API support with runtime provider override:
   - `OpenAiProvider` implementing `LlmProvider` trait for OpenAI's Chat Completions API (`complete()` and `stream()`)
   - Provider factory updated: `"openai"` recognized with `OPENAI_API_KEY` env var resolution

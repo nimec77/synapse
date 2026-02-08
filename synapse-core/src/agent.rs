@@ -99,12 +99,11 @@ impl Agent {
             if let Some(ref tool_calls) = response.tool_calls
                 && !tool_calls.is_empty()
             {
+                // Extract tool calls before moving response into messages
+                let tool_calls_to_execute = tool_calls.clone();
+
                 // Append assistant message with tool calls
                 messages.push(response);
-
-                // Execute each tool call
-                let last_msg = messages.last().unwrap();
-                let tool_calls_to_execute = last_msg.tool_calls.clone().unwrap();
 
                 for tool_call in &tool_calls_to_execute {
                     let result = self.execute_tool(&tool_call.name, &tool_call.input).await;
