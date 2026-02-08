@@ -4,6 +4,7 @@
 //! tool discovery, and tool execution.
 
 use std::collections::HashMap;
+use std::process::Stdio;
 
 use rmcp::ServiceExt;
 use rmcp::model::CallToolRequestParams;
@@ -83,11 +84,14 @@ impl McpClient {
             cmd.env(key, value);
         }
 
-        // Spawn child process and create transport
-        let transport = TokioChildProcess::new(cmd).map_err(|e| McpError::ConnectionError {
-            server: name.to_string(),
-            message: format!("failed to spawn process: {}", e),
-        })?;
+        // Spawn child process and create transport (stderr suppressed to avoid TUI corruption)
+        let (transport, _stderr) = TokioChildProcess::builder(cmd)
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|e| McpError::ConnectionError {
+                server: name.to_string(),
+                message: format!("failed to spawn process: {}", e),
+            })?;
 
         // Connect via rmcp
         let client =

@@ -73,6 +73,8 @@ struct ReplApp {
     cursor_position: usize,
     /// Scroll offset for conversation history.
     scroll_offset: u16,
+    /// Whether to auto-scroll to the bottom of conversation history.
+    auto_scroll: bool,
     /// Whether the LLM is currently streaming a response.
     is_streaming: bool,
     /// Current session ID.
@@ -93,6 +95,7 @@ impl ReplApp {
             input: String::new(),
             cursor_position: 0,
             scroll_offset: 0,
+            auto_scroll: true,
             is_streaming: false,
             session_id,
             status_message: None,
@@ -167,6 +170,7 @@ impl ReplApp {
     /// Scroll the history up by one line (decrease offset to show earlier content).
     fn scroll_up(&mut self) {
         self.scroll_offset = self.scroll_offset.saturating_sub(1);
+        self.auto_scroll = false;
     }
 
     /// Scroll the history down by one line (increase offset to show later content).
@@ -177,6 +181,7 @@ impl ReplApp {
     /// Scroll the history up by a page (decrease offset to show earlier content).
     fn scroll_page_up(&mut self, page_size: u16) {
         self.scroll_offset = self.scroll_offset.saturating_sub(page_size);
+        self.auto_scroll = false;
     }
 
     /// Scroll the history down by a page (increase offset to show later content).
@@ -265,7 +270,7 @@ impl ReplApp {
 }
 
 /// Render the UI to the terminal frame.
-fn render_ui(frame: &mut Frame, app: &ReplApp) {
+fn render_ui(frame: &mut Frame, app: &mut ReplApp) {
     let area = frame.area();
 
     // Three-area vertical layout: history (flex), input (3 lines), status (1 line)
@@ -282,18 +287,35 @@ fn render_ui(frame: &mut Frame, app: &ReplApp) {
 }
 
 /// Render the scrollable conversation history area.
-fn render_history(frame: &mut Frame, app: &ReplApp, area: Rect) {
-    let lines = app.build_history_lines();
+fn render_history(frame: &mut Frame, app: &mut ReplApp, area: Rect) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Synapse REPL ");
+    let inner_width = area.width.saturating_sub(2);
+    let inner_height = area.height.saturating_sub(2) as usize;
 
+    // First pass: build paragraph to compute total wrapped line count
+    let total_lines = {
+        let lines = app.build_history_lines();
+        let history = Paragraph::new(lines)
+            .block(block.clone())
+            .wrap(Wrap { trim: false });
+        history.line_count(inner_width)
+    };
+
+    // Update scroll offset (paragraph is now dropped, so we can mutate app)
+    let max_scroll = total_lines.saturating_sub(inner_height) as u16;
+    if app.auto_scroll {
+        app.scroll_offset = max_scroll;
+    }
+    app.scroll_offset = app.scroll_offset.min(max_scroll);
+
+    // Second pass: build and render with the correct scroll offset
+    let lines = app.build_history_lines();
     let history = Paragraph::new(lines)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" Synapse REPL "),
-        )
+        .block(block)
         .wrap(Wrap { trim: false })
         .scroll((app.scroll_offset, 0));
-
     frame.render_widget(history, area);
 }
 
@@ -362,7 +384,28 @@ fn handle_key_event(app: &mut ReplApp, key: KeyEvent, history_height: u16) -> Ke
         return KeyAction::Exit;
     }
 
-    // Don't accept input while streaming
+    // Scroll keys are always allowed (even during streaming)
+    match key.code {
+        KeyCode::Up => {
+            app.scroll_up();
+            return KeyAction::Continue;
+        }
+        KeyCode::Down => {
+            app.scroll_down();
+            return KeyAction::Continue;
+        }
+        KeyCode::PageUp => {
+            app.scroll_page_up(history_height.saturating_sub(2));
+            return KeyAction::Continue;
+        }
+        KeyCode::PageDown => {
+            app.scroll_page_down(history_height.saturating_sub(2));
+            return KeyAction::Continue;
+        }
+        _ => {}
+    }
+
+    // Don't accept text input while streaming
     if app.is_streaming {
         return KeyAction::Continue;
     }
@@ -396,22 +439,6 @@ fn handle_key_event(app: &mut ReplApp, key: KeyEvent, history_height: u16) -> Ke
         }
         KeyCode::End => {
             app.move_cursor_end();
-            KeyAction::Continue
-        }
-        KeyCode::Up => {
-            app.scroll_up();
-            KeyAction::Continue
-        }
-        KeyCode::Down => {
-            app.scroll_down();
-            KeyAction::Continue
-        }
-        KeyCode::PageUp => {
-            app.scroll_page_up(history_height.saturating_sub(2));
-            KeyAction::Continue
-        }
-        KeyCode::PageDown => {
-            app.scroll_page_down(history_height.saturating_sub(2));
             KeyAction::Continue
         }
         KeyCode::Char(c) => {
@@ -504,7 +531,7 @@ pub async fn run_repl(
         // Draw UI
         terminal
             .draw(|frame| {
-                render_ui(frame, &app);
+                render_ui(frame, &mut app);
                 // Update history height from actual layout
                 let layout = Layout::vertical([
                     Constraint::Min(3),
@@ -556,7 +583,7 @@ pub async fn run_repl(
                                 // Start streaming via agent (stream_owned takes ownership
                                 // of the messages vec, avoiding borrow issues)
                                 app.is_streaming = true;
-                                app.scroll_offset = 0;
+                                app.auto_scroll = true;
                                 response_content.clear();
                                 agent_stream = Some(agent.stream_owned(conv_messages));
                             }
@@ -586,7 +613,6 @@ pub async fn run_repl(
                     Some(Ok(StreamEvent::TextDelta(text))) => {
                         response_content.push_str(&text);
                         app.append_stream_delta(&text);
-                        app.scroll_offset = 0;
                     }
                     Some(Ok(StreamEvent::Done)) | None => {
                         app.is_streaming = false;
@@ -658,6 +684,7 @@ mod tests {
         assert!(app.input.is_empty());
         assert_eq!(app.cursor_position, 0);
         assert_eq!(app.scroll_offset, 0);
+        assert!(app.auto_scroll);
         assert!(!app.is_streaming);
         assert_eq!(app.session_id, id);
         assert!(app.status_message.is_none());
@@ -782,17 +809,20 @@ mod tests {
     fn test_scroll() {
         let id = Uuid::new_v4();
         let mut app = ReplApp::new(id, "test", "test");
+        assert!(app.auto_scroll);
 
-        // scroll_down increases offset (shows later content)
+        // scroll_down increases offset (shows later content), does not disable auto_scroll
         app.scroll_down();
         assert_eq!(app.scroll_offset, 1);
+        assert!(app.auto_scroll);
 
         app.scroll_down();
         assert_eq!(app.scroll_offset, 2);
 
-        // scroll_up decreases offset (shows earlier content)
+        // scroll_up decreases offset (shows earlier content) and disables auto_scroll
         app.scroll_up();
         assert_eq!(app.scroll_offset, 1);
+        assert!(!app.auto_scroll);
 
         app.scroll_up();
         assert_eq!(app.scroll_offset, 0);
@@ -806,17 +836,20 @@ mod tests {
     fn test_scroll_page() {
         let id = Uuid::new_v4();
         let mut app = ReplApp::new(id, "test", "test");
+        assert!(app.auto_scroll);
 
-        // scroll_page_down increases offset
+        // scroll_page_down increases offset, does not disable auto_scroll
         app.scroll_page_down(10);
         assert_eq!(app.scroll_offset, 10);
+        assert!(app.auto_scroll);
 
         app.scroll_page_down(10);
         assert_eq!(app.scroll_offset, 20);
 
-        // scroll_page_up decreases offset
+        // scroll_page_up decreases offset and disables auto_scroll
         app.scroll_page_up(15);
         assert_eq!(app.scroll_offset, 5);
+        assert!(!app.auto_scroll);
 
         app.scroll_page_up(10);
         assert_eq!(app.scroll_offset, 0);
@@ -982,6 +1015,7 @@ mod tests {
         let mut app = ReplApp::new(id, "test", "test");
         app.is_streaming = true;
 
+        // Text input is blocked during streaming
         let key = KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE);
         let action = handle_key_event(&mut app, key, 20);
         assert!(matches!(action, KeyAction::Continue));
@@ -991,6 +1025,65 @@ mod tests {
         let key = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
         let action = handle_key_event(&mut app, key, 20);
         assert!(matches!(action, KeyAction::Exit));
+    }
+
+    #[test]
+    fn test_scroll_keys_work_during_streaming() {
+        let id = Uuid::new_v4();
+        let mut app = ReplApp::new(id, "test", "test");
+        app.is_streaming = true;
+        app.scroll_offset = 5;
+
+        // Up arrow works during streaming
+        let key = KeyEvent::new(KeyCode::Up, KeyModifiers::NONE);
+        let action = handle_key_event(&mut app, key, 20);
+        assert!(matches!(action, KeyAction::Continue));
+        assert_eq!(app.scroll_offset, 4);
+
+        // Down arrow works during streaming
+        let key = KeyEvent::new(KeyCode::Down, KeyModifiers::NONE);
+        let action = handle_key_event(&mut app, key, 20);
+        assert!(matches!(action, KeyAction::Continue));
+        assert_eq!(app.scroll_offset, 5);
+
+        // PageUp works during streaming
+        let key = KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE);
+        let action = handle_key_event(&mut app, key, 20);
+        assert!(matches!(action, KeyAction::Continue));
+        assert_eq!(app.scroll_offset, 0); // 5 - (20-2) = 0 (saturating)
+
+        // PageDown works during streaming
+        let key = KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE);
+        let action = handle_key_event(&mut app, key, 20);
+        assert!(matches!(action, KeyAction::Continue));
+        assert_eq!(app.scroll_offset, 18); // 0 + (20-2) = 18
+    }
+
+    #[test]
+    fn test_auto_scroll_disabled_on_scroll_up() {
+        let id = Uuid::new_v4();
+        let mut app = ReplApp::new(id, "test", "test");
+        assert!(app.auto_scroll);
+
+        app.scroll_offset = 10;
+        app.scroll_up();
+        assert!(!app.auto_scroll);
+        assert_eq!(app.scroll_offset, 9);
+    }
+
+    #[test]
+    fn test_auto_scroll_enabled_on_message_submit() {
+        let id = Uuid::new_v4();
+        let mut app = ReplApp::new(id, "test", "test");
+
+        // Simulate scrolling up (disables auto_scroll)
+        app.scroll_offset = 10;
+        app.scroll_up();
+        assert!(!app.auto_scroll);
+
+        // Simulate what happens on message submit: auto_scroll is re-enabled
+        app.auto_scroll = true;
+        assert!(app.auto_scroll);
     }
 
     #[test]
