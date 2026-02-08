@@ -164,24 +164,24 @@ impl ReplApp {
         input.trim() == "/quit"
     }
 
-    /// Scroll the history up by one line.
+    /// Scroll the history up by one line (decrease offset to show earlier content).
     fn scroll_up(&mut self) {
-        self.scroll_offset = self.scroll_offset.saturating_add(1);
-    }
-
-    /// Scroll the history down by one line.
-    fn scroll_down(&mut self) {
         self.scroll_offset = self.scroll_offset.saturating_sub(1);
     }
 
-    /// Scroll the history up by a page.
-    fn scroll_page_up(&mut self, page_size: u16) {
-        self.scroll_offset = self.scroll_offset.saturating_add(page_size);
+    /// Scroll the history down by one line (increase offset to show later content).
+    fn scroll_down(&mut self) {
+        self.scroll_offset = self.scroll_offset.saturating_add(1);
     }
 
-    /// Scroll the history down by a page.
-    fn scroll_page_down(&mut self, page_size: u16) {
+    /// Scroll the history up by a page (decrease offset to show earlier content).
+    fn scroll_page_up(&mut self, page_size: u16) {
         self.scroll_offset = self.scroll_offset.saturating_sub(page_size);
+    }
+
+    /// Scroll the history down by a page (increase offset to show later content).
+    fn scroll_page_down(&mut self, page_size: u16) {
+        self.scroll_offset = self.scroll_offset.saturating_add(page_size);
     }
 
     /// Append a streaming text delta to the last assistant message.
@@ -783,20 +783,22 @@ mod tests {
         let id = Uuid::new_v4();
         let mut app = ReplApp::new(id, "test", "test");
 
-        app.scroll_up();
+        // scroll_down increases offset (shows later content)
+        app.scroll_down();
         assert_eq!(app.scroll_offset, 1);
 
-        app.scroll_up();
+        app.scroll_down();
         assert_eq!(app.scroll_offset, 2);
 
-        app.scroll_down();
+        // scroll_up decreases offset (shows earlier content)
+        app.scroll_up();
         assert_eq!(app.scroll_offset, 1);
 
-        app.scroll_down();
+        app.scroll_up();
         assert_eq!(app.scroll_offset, 0);
 
         // Should not go below 0
-        app.scroll_down();
+        app.scroll_up();
         assert_eq!(app.scroll_offset, 0);
     }
 
@@ -805,16 +807,18 @@ mod tests {
         let id = Uuid::new_v4();
         let mut app = ReplApp::new(id, "test", "test");
 
-        app.scroll_page_up(10);
+        // scroll_page_down increases offset
+        app.scroll_page_down(10);
         assert_eq!(app.scroll_offset, 10);
 
-        app.scroll_page_up(10);
+        app.scroll_page_down(10);
         assert_eq!(app.scroll_offset, 20);
 
-        app.scroll_page_down(15);
+        // scroll_page_up decreases offset
+        app.scroll_page_up(15);
         assert_eq!(app.scroll_offset, 5);
 
-        app.scroll_page_down(10);
+        app.scroll_page_up(10);
         assert_eq!(app.scroll_offset, 0);
     }
 

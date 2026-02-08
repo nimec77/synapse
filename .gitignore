@@ -21,3 +21,6 @@
 
 #DB
 db/
+
+#MCP
+mcp_servers.json
