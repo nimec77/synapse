@@ -97,6 +97,7 @@ impl SqliteStore {
             "system" => Ok(Role::System),
             "user" => Ok(Role::User),
             "assistant" => Ok(Role::Assistant),
+            "tool" => Ok(Role::Tool),
             _ => Err(StorageError::InvalidData(format!("unknown role: {}", s))),
         }
     }
@@ -107,6 +108,7 @@ impl SqliteStore {
             Role::System => "system",
             Role::User => "user",
             Role::Assistant => "assistant",
+            Role::Tool => "tool",
         }
     }
 }
@@ -272,14 +274,16 @@ impl SessionStore for SqliteStore {
         // Insert message
         sqlx::query(
             r#"
-            INSERT INTO messages (id, session_id, role, content, timestamp)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO messages (id, session_id, role, content, tool_calls, tool_results, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(message.id.to_string())
         .bind(message.session_id.to_string())
         .bind(Self::role_to_string(message.role))
         .bind(&message.content)
+        .bind(&message.tool_calls)
+        .bind(&message.tool_results)
         .bind(message.timestamp.to_rfc3339())
         .execute(&self.pool)
         .await
@@ -303,7 +307,7 @@ impl SessionStore for SqliteStore {
     async fn get_messages(&self, session_id: Uuid) -> Result<Vec<StoredMessage>, StorageError> {
         let rows = sqlx::query(
             r#"
-            SELECT id, session_id, role, content, timestamp
+            SELECT id, session_id, role, content, tool_calls, tool_results, timestamp
             FROM messages
             WHERE session_id = ?
             ORDER BY timestamp ASC
@@ -337,6 +341,8 @@ impl SessionStore for SqliteStore {
                 session_id,
                 role,
                 content: row.get("content"),
+                tool_calls: row.get("tool_calls"),
+                tool_results: row.get("tool_results"),
                 timestamp,
             });
         }
@@ -445,6 +451,7 @@ mod tests {
         assert_eq!(SqliteStore::role_to_string(Role::System), "system");
         assert_eq!(SqliteStore::role_to_string(Role::User), "user");
         assert_eq!(SqliteStore::role_to_string(Role::Assistant), "assistant");
+        assert_eq!(SqliteStore::role_to_string(Role::Tool), "tool");
     }
 
     #[test]
@@ -458,6 +465,7 @@ mod tests {
             SqliteStore::parse_role("assistant"),
             Ok(Role::Assistant)
         ));
+        assert!(matches!(SqliteStore::parse_role("tool"), Ok(Role::Tool)));
         assert!(matches!(
             SqliteStore::parse_role("invalid"),
             Err(StorageError::InvalidData(_))
@@ -787,5 +795,66 @@ mod tests {
             result.sessions_deleted,
             result.by_max_limit + result.by_retention
         );
+    }
+
+    #[tokio::test]
+    async fn test_sqlite_role_tool_roundtrip() {
+        let store = create_test_store().await;
+        let session = Session::new("test", "model");
+        let session_id = session.id;
+
+        store.create_session(&session).await.expect("create failed");
+
+        // Add a Tool role message
+        let msg = StoredMessage::new(session_id, Role::Tool, "tool result content");
+        store.add_message(&msg).await.expect("add tool msg failed");
+
+        // Retrieve and verify
+        let messages = store.get_messages(session_id).await.expect("get failed");
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].role, Role::Tool);
+        assert_eq!(messages[0].content, "tool result content");
+    }
+
+    #[tokio::test]
+    async fn test_sqlite_tool_calls_roundtrip() {
+        let store = create_test_store().await;
+        let session = Session::new("test", "model");
+        let session_id = session.id;
+
+        store.create_session(&session).await.expect("create failed");
+
+        // Add an assistant message with tool_calls JSON
+        let tool_calls_json = r#"[{"id":"call_1","name":"get_weather","input":{"city":"London"}}]"#;
+        let msg =
+            StoredMessage::new(session_id, Role::Assistant, "").with_tool_calls(tool_calls_json);
+        store
+            .add_message(&msg)
+            .await
+            .expect("add tool calls msg failed");
+
+        // Add a tool result message with tool_results JSON
+        let tool_results_json = r#"{"tool_call_id":"call_1"}"#;
+        let result_msg = StoredMessage::new(session_id, Role::Tool, "sunny, 20C")
+            .with_tool_results(tool_results_json);
+        store
+            .add_message(&result_msg)
+            .await
+            .expect("add tool result msg failed");
+
+        // Retrieve and verify
+        let messages = store.get_messages(session_id).await.expect("get failed");
+        assert_eq!(messages.len(), 2);
+
+        // First message: assistant with tool_calls
+        assert_eq!(messages[0].role, Role::Assistant);
+        assert_eq!(messages[0].tool_calls.as_deref(), Some(tool_calls_json));
+        assert!(messages[0].tool_results.is_none());
+
+        // Second message: tool with tool_results
+        assert_eq!(messages[1].role, Role::Tool);
+        assert_eq!(messages[1].content, "sunny, 20C");
+        assert_eq!(messages[1].tool_results.as_deref(), Some(tool_results_json));
+        assert!(messages[1].tool_calls.is_none());
     }
 }

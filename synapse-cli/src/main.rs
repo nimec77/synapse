@@ -10,7 +10,8 @@ use futures::StreamExt;
 use uuid::Uuid;
 
 use synapse_core::{
-    Config, Message, Role, Session, StoredMessage, StreamEvent, create_provider, create_storage,
+    Agent, Config, McpClient, Message, Role, Session, StoredMessage, StreamEvent, create_provider,
+    create_storage, load_mcp_config,
 };
 
 /// Synapse CLI - AI agent command-line interface
@@ -63,6 +64,25 @@ enum SessionAction {
     },
 }
 
+/// Initialize MCP client from config, returning None on any error.
+async fn init_mcp_client() -> Option<McpClient> {
+    match load_mcp_config() {
+        Ok(Some(config)) => match McpClient::new(&config).await {
+            Ok(client) if client.has_tools() => Some(client),
+            Ok(_) => None,
+            Err(e) => {
+                eprintln!("Warning: MCP initialization failed: {}", e);
+                None
+            }
+        },
+        Ok(None) => None,
+        Err(e) => {
+            eprintln!("Warning: MCP config error: {}", e);
+            None
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
@@ -90,7 +110,8 @@ async fn main() -> Result<()> {
         }
 
         let provider = create_provider(&config).context("Failed to create LLM provider")?;
-        return repl::run_repl(&config, provider, storage, args.session).await;
+        let mcp_client = init_mcp_client().await;
+        return repl::run_repl(&config, provider, storage, args.session, mcp_client).await;
     }
 
     // Get message or show help
@@ -155,44 +176,52 @@ async fn main() -> Result<()> {
         .await
         .context("Failed to store user message")?;
 
-    // Create provider and stream response
+    // Create provider and agent
     let provider = create_provider(&config).context("Failed to create LLM provider")?;
-    let stream = provider.stream(&messages);
-    tokio::pin!(stream);
+    let mcp_client = init_mcp_client().await;
+    let agent = Agent::new(provider, mcp_client);
 
-    let mut stdout = io::stdout();
-    let mut response_content = String::new();
+    // Stream response via agent (scoped to release borrows before shutdown)
+    let response_content = {
+        let stream = agent.stream(&mut messages);
+        tokio::pin!(stream);
 
-    loop {
-        tokio::select! {
-            event = stream.next() => {
-                match event {
-                    Some(Ok(StreamEvent::TextDelta(text))) => {
-                        response_content.push_str(&text);
-                        print!("{}", text);
-                        stdout.flush().context("Failed to flush stdout")?;
-                    }
-                    Some(Ok(StreamEvent::Done)) | None => {
-                        println!(); // Final newline
-                        break;
-                    }
-                    Some(Ok(StreamEvent::Error(e))) => {
-                        return Err(e).context("Streaming error");
-                    }
-                    Some(Ok(_)) => {
-                        // Ignore ToolCall/ToolResult for now
-                    }
-                    Some(Err(e)) => {
-                        return Err(e).context("Stream error");
+        let mut stdout = io::stdout();
+        let mut content = String::new();
+
+        loop {
+            tokio::select! {
+                event = stream.next() => {
+                    match event {
+                        Some(Ok(StreamEvent::TextDelta(text))) => {
+                            content.push_str(&text);
+                            print!("{}", text);
+                            stdout.flush().context("Failed to flush stdout")?;
+                        }
+                        Some(Ok(StreamEvent::Done)) | None => {
+                            println!(); // Final newline
+                            break;
+                        }
+                        Some(Ok(StreamEvent::Error(e))) => {
+                            return Err(e).context("Streaming error");
+                        }
+                        Some(Ok(_)) => {
+                            // Ignore ToolCall/ToolResult (agent handles internally)
+                        }
+                        Some(Err(e)) => {
+                            return Err(e).context("Agent error");
+                        }
                     }
                 }
-            }
-            _ = tokio::signal::ctrl_c() => {
-                println!("\n[Interrupted]");
-                break;
+                _ = tokio::signal::ctrl_c() => {
+                    println!("\n[Interrupted]");
+                    break;
+                }
             }
         }
-    }
+
+        content
+    };
 
     // Store assistant response
     if !response_content.is_empty() {
@@ -202,6 +231,9 @@ async fn main() -> Result<()> {
             .await
             .context("Failed to store assistant message")?;
     }
+
+    // Shutdown agent (MCP connections)
+    agent.shutdown().await;
 
     Ok(())
 }
@@ -283,6 +315,7 @@ async fn handle_command(command: Commands) -> Result<()> {
                         Role::System => "[SYSTEM]",
                         Role::User => "[USER]",
                         Role::Assistant => "[ASSISTANT]",
+                        Role::Tool => "[TOOL]",
                     };
                     println!("{}", role_label);
                     println!("{}", msg.content);

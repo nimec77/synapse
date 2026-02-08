@@ -10,7 +10,8 @@ use futures::Stream;
 use serde::{Deserialize, Serialize};
 
 use super::{LlmProvider, ProviderError, StreamEvent};
-use crate::message::{Message, Role};
+use crate::mcp::ToolDefinition;
+use crate::message::{Message, Role, ToolCallData};
 
 /// Default max tokens for API responses.
 const DEFAULT_MAX_TOKENS: u32 = 1024;
@@ -63,74 +64,47 @@ impl AnthropicProvider {
             model: model.into(),
         }
     }
-}
 
-/// Request body for Anthropic Messages API.
-#[derive(Debug, Serialize)]
-struct ApiRequest {
-    /// Model identifier.
-    model: String,
-    /// Maximum tokens to generate.
-    max_tokens: u32,
-    /// Conversation messages (user/assistant only).
-    messages: Vec<ApiMessage>,
-    /// Optional system prompt.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    system: Option<String>,
-}
+    /// Build API messages from conversation messages, handling Role::Tool translation.
+    fn build_api_messages(messages: &[Message]) -> Vec<ApiMessage> {
+        messages
+            .iter()
+            .filter(|m| m.role != Role::System)
+            .map(|m| {
+                if m.role == Role::Tool {
+                    // Anthropic handles tool results as user messages with tool_result content blocks
+                    let tool_call_id = m.tool_call_id.clone().unwrap_or_default();
+                    ApiMessage {
+                        role: "user".to_string(),
+                        content: ApiContent::Blocks(vec![ContentBlock {
+                            content_type: "tool_result".to_string(),
+                            text: None,
+                            id: None,
+                            name: None,
+                            input: None,
+                            tool_use_id: Some(tool_call_id),
+                            content: Some(m.content.clone()),
+                        }]),
+                    }
+                } else {
+                    ApiMessage {
+                        role: match m.role {
+                            Role::User => "user".to_string(),
+                            Role::Assistant => "assistant".to_string(),
+                            _ => "user".to_string(),
+                        },
+                        content: ApiContent::Text(m.content.clone()),
+                    }
+                }
+            })
+            .collect()
+    }
 
-/// A single message in the API request.
-#[derive(Debug, Serialize)]
-struct ApiMessage {
-    /// Message role ("user" or "assistant").
-    role: String,
-    /// Message content.
-    content: String,
-}
-
-/// Response body from Anthropic Messages API.
-#[derive(Debug, Deserialize)]
-struct ApiResponse {
-    /// Response content blocks.
-    content: Vec<ContentBlock>,
-}
-
-/// Content block in API response.
-#[derive(Debug, Deserialize)]
-struct ContentBlock {
-    /// Content type (e.g., "text").
-    #[serde(rename = "type")]
-    content_type: String,
-    /// Text content (present for "text" type).
-    text: Option<String>,
-}
-
-/// Error response from Anthropic API.
-#[derive(Debug, Deserialize)]
-struct ApiError {
-    /// Error details.
-    error: ErrorDetail,
-}
-
-/// Error detail from API error response.
-#[derive(Debug, Deserialize)]
-#[allow(dead_code)] // Fields used for deserialization
-struct ErrorDetail {
-    /// Error type (e.g., "authentication_error").
-    #[serde(rename = "type")]
-    error_type: String,
-    /// Human-readable error message.
-    message: String,
-}
-
-#[async_trait]
-impl LlmProvider for AnthropicProvider {
-    async fn complete(&self, messages: &[Message]) -> Result<Message, ProviderError> {
-        // Extract system messages to separate field
+    /// Extract system prompt from messages.
+    fn extract_system(messages: &[Message]) -> Option<String> {
         let system_messages: Vec<&Message> =
             messages.iter().filter(|m| m.role == Role::System).collect();
-
-        let system = if system_messages.is_empty() {
+        if system_messages.is_empty() {
             None
         } else {
             Some(
@@ -140,36 +114,18 @@ impl LlmProvider for AnthropicProvider {
                     .collect::<Vec<_>>()
                     .join("\n\n"),
             )
-        };
+        }
+    }
 
-        // Convert non-system messages to API format
-        let api_messages: Vec<ApiMessage> = messages
-            .iter()
-            .filter(|m| m.role != Role::System)
-            .map(|m| ApiMessage {
-                role: match m.role {
-                    Role::User => "user".to_string(),
-                    Role::Assistant => "assistant".to_string(),
-                    Role::System => unreachable!("System messages filtered above"),
-                },
-                content: m.content.clone(),
-            })
-            .collect();
-
-        let request = ApiRequest {
-            model: self.model.clone(),
-            max_tokens: DEFAULT_MAX_TOKENS,
-            messages: api_messages,
-            system,
-        };
-
+    /// Send request and parse response.
+    async fn send_request(&self, request: &ApiRequest) -> Result<Message, ProviderError> {
         let response = self
             .client
             .post(API_ENDPOINT)
             .header("x-api-key", &self.api_key)
             .header("anthropic-version", ANTHROPIC_VERSION)
             .header("content-type", "application/json")
-            .json(&request)
+            .json(request)
             .send()
             .await
             .map_err(|e| ProviderError::RequestFailed(e.to_string()))?;
@@ -205,8 +161,21 @@ impl LlmProvider for AnthropicProvider {
                     message: format!("failed to parse response: {}", e),
                 })?;
 
-        // Extract text content from response
-        let content = api_response
+        // Check for tool_use blocks
+        let tool_calls: Vec<ToolCallData> = api_response
+            .content
+            .iter()
+            .filter(|block| block.content_type == "tool_use")
+            .filter_map(|block| {
+                let id = block.id.clone()?;
+                let name = block.name.clone()?;
+                let input = block.input.clone().unwrap_or(serde_json::json!({}));
+                Some(ToolCallData { id, name, input })
+            })
+            .collect();
+
+        // Extract text content
+        let text_content = api_response
             .content
             .iter()
             .filter(|block| block.content_type == "text")
@@ -215,7 +184,163 @@ impl LlmProvider for AnthropicProvider {
             .collect::<Vec<_>>()
             .join("");
 
-        Ok(Message::new(Role::Assistant, content))
+        let mut msg = Message::new(Role::Assistant, text_content);
+        if !tool_calls.is_empty() {
+            msg.tool_calls = Some(tool_calls);
+        }
+
+        Ok(msg)
+    }
+}
+
+/// Request body for Anthropic Messages API.
+#[derive(Debug, Serialize)]
+struct ApiRequest {
+    /// Model identifier.
+    model: String,
+    /// Maximum tokens to generate.
+    max_tokens: u32,
+    /// Conversation messages (user/assistant only).
+    messages: Vec<ApiMessage>,
+    /// Optional system prompt.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    system: Option<String>,
+    /// Optional tool definitions.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tools: Option<Vec<AnthropicTool>>,
+}
+
+/// Tool definition in Anthropic API format.
+#[derive(Debug, Serialize)]
+struct AnthropicTool {
+    /// Tool name.
+    name: String,
+    /// Tool description.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    /// JSON Schema for the tool's input parameters.
+    input_schema: serde_json::Value,
+}
+
+/// Content that can be either a text string or an array of content blocks.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(untagged)]
+enum ApiContent {
+    /// Simple text content.
+    Text(String),
+    /// Array of content blocks (for tool results).
+    Blocks(Vec<ContentBlock>),
+}
+
+/// A single message in the API request.
+#[derive(Debug, Serialize)]
+struct ApiMessage {
+    /// Message role ("user" or "assistant").
+    role: String,
+    /// Message content (text or blocks).
+    content: ApiContent,
+}
+
+/// Response body from Anthropic Messages API.
+#[derive(Debug, Deserialize)]
+struct ApiResponse {
+    /// Response content blocks.
+    content: Vec<ContentBlock>,
+}
+
+/// Content block in API response.
+#[derive(Debug, Serialize, Deserialize)]
+struct ContentBlock {
+    /// Content type (e.g., "text", "tool_use", "tool_result").
+    #[serde(rename = "type")]
+    content_type: String,
+    /// Text content (present for "text" type).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    text: Option<String>,
+    /// Tool use ID (present for "tool_use" type).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    id: Option<String>,
+    /// Tool name (present for "tool_use" type).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
+    /// Tool input (present for "tool_use" type).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    input: Option<serde_json::Value>,
+    /// Tool use ID reference (present for "tool_result" type).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_use_id: Option<String>,
+    /// Tool result content (present for "tool_result" type).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    content: Option<String>,
+}
+
+/// Error response from Anthropic API.
+#[derive(Debug, Deserialize)]
+struct ApiError {
+    /// Error details.
+    error: ErrorDetail,
+}
+
+/// Error detail from API error response.
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)] // Fields used for deserialization
+struct ErrorDetail {
+    /// Error type (e.g., "authentication_error").
+    #[serde(rename = "type")]
+    error_type: String,
+    /// Human-readable error message.
+    message: String,
+}
+
+#[async_trait]
+impl LlmProvider for AnthropicProvider {
+    async fn complete(&self, messages: &[Message]) -> Result<Message, ProviderError> {
+        let system = Self::extract_system(messages);
+        let api_messages = Self::build_api_messages(messages);
+
+        let request = ApiRequest {
+            model: self.model.clone(),
+            max_tokens: DEFAULT_MAX_TOKENS,
+            messages: api_messages,
+            system,
+            tools: None,
+        };
+
+        self.send_request(&request).await
+    }
+
+    async fn complete_with_tools(
+        &self,
+        messages: &[Message],
+        tools: &[ToolDefinition],
+    ) -> Result<Message, ProviderError> {
+        let system = Self::extract_system(messages);
+        let api_messages = Self::build_api_messages(messages);
+
+        let api_tools = if tools.is_empty() {
+            None
+        } else {
+            Some(
+                tools
+                    .iter()
+                    .map(|t| AnthropicTool {
+                        name: t.name.clone(),
+                        description: t.description.clone(),
+                        input_schema: t.input_schema.clone(),
+                    })
+                    .collect(),
+            )
+        };
+
+        let request = ApiRequest {
+            model: self.model.clone(),
+            max_tokens: DEFAULT_MAX_TOKENS,
+            messages: api_messages,
+            system,
+            tools: api_tools,
+        };
+
+        self.send_request(&request).await
     }
 
     fn stream(
@@ -251,9 +376,10 @@ mod tests {
             max_tokens: 1024,
             messages: vec![ApiMessage {
                 role: "user".to_string(),
-                content: "Hello, Claude".to_string(),
+                content: ApiContent::Text("Hello, Claude".to_string()),
             }],
             system: None,
+            tools: None,
         };
 
         let json = serde_json::to_value(&request).unwrap();
@@ -263,6 +389,7 @@ mod tests {
         assert_eq!(json["messages"][0]["role"], "user");
         assert_eq!(json["messages"][0]["content"], "Hello, Claude");
         assert!(json.get("system").is_none());
+        assert!(json.get("tools").is_none());
     }
 
     #[test]
@@ -272,9 +399,10 @@ mod tests {
             max_tokens: 1024,
             messages: vec![ApiMessage {
                 role: "user".to_string(),
-                content: "Hello".to_string(),
+                content: ApiContent::Text("Hello".to_string()),
             }],
             system: Some("You are a helpful assistant.".to_string()),
+            tools: None,
         };
 
         let json = serde_json::to_value(&request).unwrap();
@@ -321,19 +449,11 @@ mod tests {
             Message::new(Role::User, "Hello"),
         ];
 
-        // Extract system messages
-        let system_messages: Vec<&Message> =
-            messages.iter().filter(|m| m.role == Role::System).collect();
+        let system = AnthropicProvider::extract_system(&messages);
+        assert_eq!(system, Some("You are a helpful assistant.".to_string()));
 
-        assert_eq!(system_messages.len(), 1);
-        assert_eq!(system_messages[0].content, "You are a helpful assistant.");
-
-        // Non-system messages
-        let non_system: Vec<&Message> =
-            messages.iter().filter(|m| m.role != Role::System).collect();
-
-        assert_eq!(non_system.len(), 1);
-        assert_eq!(non_system[0].role, Role::User);
+        let api_messages = AnthropicProvider::build_api_messages(&messages);
+        assert_eq!(api_messages.len(), 1);
     }
 
     #[test]
@@ -344,16 +464,11 @@ mod tests {
             Message::new(Role::User, "Hello"),
         ];
 
-        let system_messages: Vec<&Message> =
-            messages.iter().filter(|m| m.role == Role::System).collect();
-
-        let combined = system_messages
-            .iter()
-            .map(|m| m.content.as_str())
-            .collect::<Vec<_>>()
-            .join("\n\n");
-
-        assert_eq!(combined, "System prompt 1\n\nSystem prompt 2");
+        let system = AnthropicProvider::extract_system(&messages);
+        assert_eq!(
+            system,
+            Some("System prompt 1\n\nSystem prompt 2".to_string())
+        );
     }
 
     #[test]
@@ -381,9 +496,99 @@ mod tests {
 
     #[test]
     fn test_anthropic_provider_implements_stream() {
-        // Verify AnthropicProvider implements the stream method
-        // This is a compile-time check - if it compiles, the trait is implemented
         fn assert_stream_impl<T: LlmProvider>() {}
         assert_stream_impl::<AnthropicProvider>();
+    }
+
+    #[test]
+    fn test_complete_with_tools_serialization() {
+        let tools = vec![AnthropicTool {
+            name: "get_weather".to_string(),
+            description: Some("Get weather for a location".to_string()),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {"location": {"type": "string"}},
+                "required": ["location"]
+            }),
+        }];
+
+        let request = ApiRequest {
+            model: "claude-3-5-sonnet-20241022".to_string(),
+            max_tokens: 1024,
+            messages: vec![ApiMessage {
+                role: "user".to_string(),
+                content: ApiContent::Text("What's the weather?".to_string()),
+            }],
+            system: None,
+            tools: Some(tools),
+        };
+
+        let json = serde_json::to_value(&request).unwrap();
+        assert!(json.get("tools").is_some());
+        assert_eq!(json["tools"][0]["name"], "get_weather");
+        assert_eq!(
+            json["tools"][0]["description"],
+            "Get weather for a location"
+        );
+        assert!(json["tools"][0]["input_schema"].is_object());
+    }
+
+    #[test]
+    fn test_tool_call_response_parsing() {
+        let json = r#"{
+            "content": [
+                {"type": "text", "text": "I'll check the weather."},
+                {"type": "tool_use", "id": "call_1", "name": "get_weather", "input": {"location": "London"}}
+            ]
+        }"#;
+
+        let response: ApiResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.content.len(), 2);
+
+        // First block is text
+        assert_eq!(response.content[0].content_type, "text");
+
+        // Second block is tool_use
+        assert_eq!(response.content[1].content_type, "tool_use");
+        assert_eq!(response.content[1].id, Some("call_1".to_string()));
+        assert_eq!(response.content[1].name, Some("get_weather".to_string()));
+    }
+
+    #[test]
+    fn test_tool_role_message_serialization() {
+        let messages = vec![
+            Message::new(Role::User, "What's the weather?"),
+            Message::tool_result("call_1", "Sunny, 20C"),
+        ];
+
+        let api_messages = AnthropicProvider::build_api_messages(&messages);
+        assert_eq!(api_messages.len(), 2);
+
+        // Tool result is serialized as user role with tool_result content block
+        assert_eq!(api_messages[1].role, "user");
+        if let ApiContent::Blocks(blocks) = &api_messages[1].content {
+            assert_eq!(blocks[0].content_type, "tool_result");
+            assert_eq!(blocks[0].tool_use_id, Some("call_1".to_string()));
+            assert_eq!(blocks[0].content, Some("Sunny, 20C".to_string()));
+        } else {
+            panic!("Expected Blocks content for tool result");
+        }
+    }
+
+    #[test]
+    fn test_complete_with_tools_no_tools() {
+        let request = ApiRequest {
+            model: "claude-3-5-sonnet-20241022".to_string(),
+            max_tokens: 1024,
+            messages: vec![ApiMessage {
+                role: "user".to_string(),
+                content: ApiContent::Text("Hello".to_string()),
+            }],
+            system: None,
+            tools: None,
+        };
+
+        let json = serde_json::to_value(&request).unwrap();
+        assert!(json.get("tools").is_none());
     }
 }
