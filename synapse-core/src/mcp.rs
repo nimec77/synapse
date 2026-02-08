@@ -89,7 +89,13 @@ fn resolve_config_path(config_path: Option<&str>) -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Mutex;
+
     use super::*;
+
+    /// Guards tests that mutate the `SYNAPSE_MCP_CONFIG` env var so they don't
+    /// race against each other when cargo runs tests in parallel.
+    static ENV_MUTEX: Mutex<()> = Mutex::new(());
 
     #[test]
     fn test_mcp_error_display() {
@@ -114,6 +120,7 @@ mod tests {
 
     #[test]
     fn test_load_mcp_config_missing_file() {
+        let _lock = ENV_MUTEX.lock().unwrap();
         // Set env to a non-existent path
         unsafe { std::env::set_var("SYNAPSE_MCP_CONFIG", "/tmp/nonexistent_synapse_mcp.json") };
         let result = load_mcp_config(None);
@@ -124,6 +131,7 @@ mod tests {
 
     #[test]
     fn test_load_mcp_config_valid_file() {
+        let _lock = ENV_MUTEX.lock().unwrap();
         let tmp_path = std::env::temp_dir().join("synapse_test_mcp_config.json");
         let config_json = r#"{
             "mcpServers": {
@@ -149,6 +157,7 @@ mod tests {
 
     #[test]
     fn test_load_mcp_config_from_config_path() {
+        let _lock = ENV_MUTEX.lock().unwrap();
         let tmp_path = std::env::temp_dir().join("synapse_test_mcp_config_path.json");
         let config_json = r#"{
             "mcpServers": {
@@ -174,6 +183,7 @@ mod tests {
 
     #[test]
     fn test_load_mcp_config_env_overrides_config_path() {
+        let _lock = ENV_MUTEX.lock().unwrap();
         let env_path = std::env::temp_dir().join("synapse_test_mcp_env.json");
         let config_json = r#"{
             "mcpServers": {
