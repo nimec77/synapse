@@ -12,7 +12,7 @@ pub mod session;
 pub mod storage;
 
 pub use agent::{Agent, AgentError};
-pub use config::{Config, ConfigError, SessionConfig};
+pub use config::{Config, ConfigError, McpSettings, SessionConfig};
 pub use mcp::{McpClient, McpConfig, McpError, McpServerConfig, ToolDefinition, load_mcp_config};
 pub use message::{Message, Role, ToolCallData};
 pub use provider::{

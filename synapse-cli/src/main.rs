@@ -65,8 +65,8 @@ enum SessionAction {
 }
 
 /// Initialize MCP client from config, returning None on any error.
-async fn init_mcp_client() -> Option<McpClient> {
-    match load_mcp_config() {
+async fn init_mcp_client(config_path: Option<&str>) -> Option<McpClient> {
+    match load_mcp_config(config_path) {
         Ok(Some(config)) => match McpClient::new(&config).await {
             Ok(client) if client.has_tools() => Some(client),
             Ok(_) => None,
@@ -110,7 +110,8 @@ async fn main() -> Result<()> {
         }
 
         let provider = create_provider(&config).context("Failed to create LLM provider")?;
-        let mcp_client = init_mcp_client().await;
+        let mcp_path = config.mcp.as_ref().and_then(|m| m.config_path.as_deref());
+        let mcp_client = init_mcp_client(mcp_path).await;
         return repl::run_repl(&config, provider, storage, args.session, mcp_client).await;
     }
 
@@ -178,7 +179,8 @@ async fn main() -> Result<()> {
 
     // Create provider and agent
     let provider = create_provider(&config).context("Failed to create LLM provider")?;
-    let mcp_client = init_mcp_client().await;
+    let mcp_path = config.mcp.as_ref().and_then(|m| m.config_path.as_deref());
+    let mcp_client = init_mcp_client(mcp_path).await;
     let agent = Agent::new(provider, mcp_client);
 
     // Stream response via agent (scoped to release borrows before shutdown)

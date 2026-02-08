@@ -95,6 +95,7 @@ mod tests {
             model: "test-model".to_string(),
             api_key: api_key.map(|s| s.to_string()),
             session: None,
+            mcp: None,
         }
     }
 

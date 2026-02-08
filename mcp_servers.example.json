@@ -2,7 +2,7 @@
   "_comment": [
     "Synapse MCP (Model Context Protocol) Server Configuration",
     "Copy this file to: ~/.config/synapse/mcp_servers.json",
-    "Or set SYNAPSE_MCP_CONFIG env var to a custom path.",
+    "Or set mcp.config_path in config.toml, or SYNAPSE_MCP_CONFIG env var.",
     "",
     "Each entry under 'mcpServers' defines an MCP server to connect to.",
     "Fields: command (required), args (optional), env (optional)."

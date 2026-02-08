@@ -38,3 +38,10 @@ retention_days = 90
 # Enable automatic cleanup of old sessions
 # When true: cleanup runs on startup and periodically
 auto_cleanup = true
+
+# MCP (Model Context Protocol) server configuration
+[mcp]
+# Path to MCP servers config file (JSON)
+# Can also be set via SYNAPSE_MCP_CONFIG environment variable (takes priority)
+# Defaults to ~/.config/synapse/mcp_servers.json
+# config_path = "mcp_servers.json"

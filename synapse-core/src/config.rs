@@ -48,6 +48,10 @@ pub struct Config {
     /// Session storage configuration.
     #[serde(default)]
     pub session: Option<SessionConfig>,
+
+    /// MCP (Model Context Protocol) configuration.
+    #[serde(default)]
+    pub mcp: Option<McpSettings>,
 }
 
 /// Session storage configuration.
@@ -85,6 +89,19 @@ fn default_retention_days() -> u32 {
 
 fn default_auto_cleanup() -> bool {
     true
+}
+
+/// MCP (Model Context Protocol) settings.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct McpSettings {
+    /// Path to MCP servers configuration file (JSON).
+    ///
+    /// Priority order:
+    /// 1. `SYNAPSE_MCP_CONFIG` environment variable (highest priority)
+    /// 2. This field (`mcp.config_path` in config.toml)
+    /// 3. Default: `~/.config/synapse/mcp_servers.json`
+    #[serde(default)]
+    pub config_path: Option<String>,
 }
 
 fn default_provider() -> String {
@@ -164,6 +181,7 @@ impl Default for Config {
             api_key: None,
             model: default_model(),
             session: None,
+            mcp: None,
         }
     }
 }
@@ -332,5 +350,42 @@ max_sessions = 50
             Some("sqlite:/custom/path/sessions.db".to_string())
         );
         assert_eq!(session.max_sessions, 50);
+    }
+
+    #[test]
+    fn test_config_without_mcp_section() {
+        let toml = r#"
+provider = "deepseek"
+model = "deepseek-chat"
+"#;
+        let config: Config = toml::from_str(toml).unwrap();
+        assert!(config.mcp.is_none());
+    }
+
+    #[test]
+    fn test_config_with_mcp_section() {
+        let toml = r#"
+provider = "deepseek"
+
+[mcp]
+config_path = "/custom/path/mcp_servers.json"
+"#;
+        let config: Config = toml::from_str(toml).unwrap();
+        assert!(config.mcp.is_some());
+        let mcp = config.mcp.unwrap();
+        assert_eq!(
+            mcp.config_path,
+            Some("/custom/path/mcp_servers.json".to_string())
+        );
+    }
+
+    #[test]
+    fn test_config_with_mcp_section_no_path() {
+        let toml = r#"
+[mcp]
+"#;
+        let config: Config = toml::from_str(toml).unwrap();
+        assert!(config.mcp.is_some());
+        assert!(config.mcp.unwrap().config_path.is_none());
     }
 }
