@@ -10,7 +10,8 @@ use async_trait::async_trait;
 use futures::Stream;
 
 use super::{LlmProvider, ProviderError, StreamEvent};
-use crate::message::{Message, Role};
+use crate::mcp::ToolDefinition;
+use crate::message::{Message, Role, ToolCallData};
 
 /// A mock LLM provider for testing.
 ///
@@ -96,6 +97,46 @@ impl MockProvider {
         self
     }
 
+    /// Add a tool call response to be returned on the next call to `complete`.
+    ///
+    /// The response will have `Role::Assistant` with the specified tool calls.
+    /// This enables testing the agent loop without real providers.
+    ///
+    /// # Arguments
+    ///
+    /// * `tool_calls` - Tool calls the mock "assistant" wants to invoke
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use synapse_core::provider::MockProvider;
+    /// use synapse_core::message::ToolCallData;
+    ///
+    /// let provider = MockProvider::new()
+    ///     .with_tool_call_response(vec![ToolCallData {
+    ///         id: "call_1".to_string(),
+    ///         name: "get_weather".to_string(),
+    ///         input: serde_json::json!({"location": "London"}),
+    ///     }])
+    ///     .with_response("The weather is sunny.");
+    /// ```
+    #[must_use]
+    pub fn with_tool_call_response(self, tool_calls: Vec<ToolCallData>) -> Self {
+        let mut msg = Message::new(Role::Assistant, "");
+        msg.tool_calls = Some(tool_calls);
+
+        match self.responses.lock() {
+            Ok(mut responses) => {
+                responses.push(msg);
+            }
+            Err(poisoned) => {
+                let mut responses = poisoned.into_inner();
+                responses.push(msg);
+            }
+        }
+        self
+    }
+
     /// Configure tokens to yield when streaming.
     ///
     /// When streaming is called, each token is yielded as a `TextDelta`
@@ -144,6 +185,15 @@ impl LlmProvider for MockProvider {
         } else {
             Ok(Message::new(Role::Assistant, "Mock response"))
         }
+    }
+
+    async fn complete_with_tools(
+        &self,
+        messages: &[Message],
+        _tools: &[ToolDefinition],
+    ) -> Result<Message, ProviderError> {
+        // MockProvider uses the same response queue for both complete and complete_with_tools.
+        self.complete(messages).await
     }
 
     fn stream(
@@ -321,5 +371,64 @@ mod tests {
             matches!(last_event, Some(Ok(StreamEvent::Done))),
             "Stream should end with Done event"
         );
+    }
+
+    #[tokio::test]
+    async fn test_mock_provider_handles_tool_role() {
+        // AC1: MockProvider handles Role::Tool messages without panicking
+        let provider = MockProvider::new().with_response("After tool result");
+        let messages = vec![
+            Message::new(Role::User, "Hello"),
+            Message::tool_result("call_1", "Tool output"),
+        ];
+
+        let response = provider.complete(&messages).await.unwrap();
+        assert_eq!(response.content, "After tool result");
+    }
+
+    #[tokio::test]
+    async fn test_mock_with_tool_call_response() {
+        // AC2: with_tool_call_response configures the mock to return a message with tool calls
+        // on the first call and a text response on subsequent calls
+        let provider = MockProvider::new()
+            .with_response("Final text response")
+            .with_tool_call_response(vec![ToolCallData {
+                id: "call_1".to_string(),
+                name: "get_weather".to_string(),
+                input: serde_json::json!({"location": "London"}),
+            }]);
+
+        let messages = vec![Message::new(Role::User, "What's the weather?")];
+
+        // First call: returns tool call (LIFO order)
+        let r1 = provider.complete(&messages).await.unwrap();
+        assert!(r1.tool_calls.is_some());
+        let tool_calls = r1.tool_calls.unwrap();
+        assert_eq!(tool_calls.len(), 1);
+        assert_eq!(tool_calls[0].name, "get_weather");
+        assert_eq!(tool_calls[0].id, "call_1");
+
+        // Second call: returns text response
+        let r2 = provider.complete(&messages).await.unwrap();
+        assert_eq!(r2.content, "Final text response");
+        assert!(r2.tool_calls.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_mock_complete_with_tools_delegates() {
+        // complete_with_tools should use the same response queue
+        let provider = MockProvider::new().with_response("Tool-aware response");
+        let messages = vec![Message::new(Role::User, "Hello")];
+        let tools = vec![crate::mcp::ToolDefinition {
+            name: "test".to_string(),
+            description: None,
+            input_schema: serde_json::json!({}),
+        }];
+
+        let response = provider
+            .complete_with_tools(&messages, &tools)
+            .await
+            .unwrap();
+        assert_eq!(response.content, "Tool-aware response");
     }
 }

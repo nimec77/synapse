@@ -23,13 +23,13 @@ use ratatui::{
 use uuid::Uuid;
 
 use synapse_core::{
-    Config, LlmProvider, Message, ProviderError, Role, Session, SessionStore, StoredMessage,
-    StreamEvent,
+    Agent, AgentError, Config, LlmProvider, McpClient, Message, Role, Session, SessionStore,
+    StoredMessage, StreamEvent,
 };
 
-/// A pinned, boxed stream of LLM stream events.
-type LlmStream<'a> =
-    std::pin::Pin<Box<dyn futures::Stream<Item = Result<StreamEvent, ProviderError>> + Send + 'a>>;
+/// A pinned, boxed stream of agent stream events.
+type AgentStream<'a> =
+    std::pin::Pin<Box<dyn futures::Stream<Item = Result<StreamEvent, AgentError>> + Send + 'a>>;
 
 /// Guard that restores terminal state on drop.
 ///
@@ -216,6 +216,7 @@ impl ReplApp {
                 Role::User => ("[USER]", Color::Green),
                 Role::Assistant => ("[ASSISTANT]", Color::Cyan),
                 Role::System => ("[SYSTEM]", Color::Yellow),
+                Role::Tool => ("[TOOL]", Color::Magenta),
             };
 
             // Role label line
@@ -432,11 +433,13 @@ fn handle_key_event(app: &mut ReplApp, key: KeyEvent, history_height: u16) -> Ke
 /// * `provider` - LLM provider for generating responses
 /// * `storage` - Session storage for persistence
 /// * `session_id` - Optional session ID to resume; creates new if None
+/// * `mcp_client` - Optional MCP client for tool execution
 pub async fn run_repl(
     config: &Config,
     provider: Box<dyn LlmProvider>,
     storage: Box<dyn SessionStore>,
     session_id: Option<Uuid>,
+    mcp_client: Option<McpClient>,
 ) -> Result<()> {
     // Create or load session
     let (session, history) = match session_id {
@@ -464,6 +467,9 @@ pub async fn run_repl(
         }
     };
 
+    // Create agent wrapping provider and MCP client
+    let agent = Agent::new(provider, mcp_client);
+
     // Initialize app state
     let mut app = ReplApp::new(session.id, &config.provider, &config.model);
 
@@ -482,8 +488,10 @@ pub async fn run_repl(
     // Set up event stream
     let mut event_reader = EventStream::new();
 
-    // Active LLM stream (None when not streaming)
-    let mut llm_stream: Option<LlmStream<'_>> = None;
+    // Active agent stream (None when not streaming).
+    // Uses stream_owned() so the stream takes ownership of messages,
+    // avoiding borrow conflicts in the event loop.
+    let mut agent_stream: Option<AgentStream<'_>> = None;
 
     // Accumulated response content for storage
     let mut response_content = String::new();
@@ -536,7 +544,7 @@ pub async fn run_repl(
                                     continue;
                                 }
 
-                                // Build full conversation for provider from app.messages,
+                                // Build full conversation for agent from app.messages,
                                 // which already contains history (populated during session
                                 // resume) plus any new messages from this REPL session.
                                 let conv_messages: Vec<Message> = app
@@ -545,11 +553,12 @@ pub async fn run_repl(
                                     .map(|m| Message::new(m.role, &m.content))
                                     .collect();
 
-                                // Start streaming
+                                // Start streaming via agent (stream_owned takes ownership
+                                // of the messages vec, avoiding borrow issues)
                                 app.is_streaming = true;
                                 app.scroll_offset = 0;
                                 response_content.clear();
-                                llm_stream = Some(provider.stream(&conv_messages));
+                                agent_stream = Some(agent.stream_owned(conv_messages));
                             }
                         }
                     }
@@ -564,9 +573,9 @@ pub async fn run_repl(
                 }
             }
 
-            // LLM stream events (only when streaming)
+            // Agent stream events (only when streaming)
             event = async {
-                if let Some(ref mut stream) = llm_stream {
+                if let Some(ref mut stream) = agent_stream {
                     stream.next().await
                 } else {
                     // Never resolves when not streaming
@@ -581,7 +590,7 @@ pub async fn run_repl(
                     }
                     Some(Ok(StreamEvent::Done)) | None => {
                         app.is_streaming = false;
-                        llm_stream = None;
+                        agent_stream = None;
 
                         // Store assistant response
                         if !response_content.is_empty() {
@@ -604,25 +613,31 @@ pub async fn run_repl(
                     }
                     Some(Ok(StreamEvent::Error(e))) => {
                         app.is_streaming = false;
-                        llm_stream = None;
+                        agent_stream = None;
                         app.status_message = Some(format!("LLM error: {}", e));
                     }
                     Some(Ok(_)) => {
-                        // Ignore ToolCall/ToolResult for now
+                        // Ignore ToolCall/ToolResult (agent handles internally)
                     }
                     Some(Err(e)) => {
                         app.is_streaming = false;
-                        llm_stream = None;
-                        app.status_message = Some(format!("Stream error: {}", e));
+                        agent_stream = None;
+                        app.status_message = Some(format!("Agent error: {}", e));
                     }
                 }
             }
         }
     }
 
+    // Drop the stream before shutting down the agent (releases borrow)
+    drop(agent_stream);
+
     // Drop terminal guard (restores terminal) before printing
     drop(_guard);
     ratatui::restore();
+
+    // Shutdown agent (MCP connections)
+    agent.shutdown().await;
 
     // Print session ID to stderr for future resumption
     eprintln!("Session: {}", session.id);
@@ -884,6 +899,21 @@ mod tests {
         // User: [USER] + "  Hello" + "" = 3 lines
         // Assistant: [ASSISTANT] + "  Hi!" + "" = 3 lines
         assert_eq!(lines.len(), 6);
+    }
+
+    #[test]
+    fn test_build_history_lines_with_tool_message() {
+        let id = Uuid::new_v4();
+        let mut app = ReplApp::new(id, "test", "test");
+
+        app.messages.push(DisplayMessage {
+            role: Role::Tool,
+            content: "Tool output".to_string(),
+        });
+
+        let lines = app.build_history_lines();
+        // Tool: [TOOL] + "  Tool output" + "" = 3 lines
+        assert_eq!(lines.len(), 3);
     }
 
     #[test]

@@ -22,6 +22,7 @@ use std::pin::Pin;
 use async_trait::async_trait;
 use futures::Stream;
 
+use crate::mcp::ToolDefinition;
 use crate::message::Message;
 
 /// Error type for provider operations.
@@ -119,4 +120,28 @@ pub trait LlmProvider: Send + Sync {
         &self,
         messages: &[Message],
     ) -> Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send + '_>>;
+
+    /// Send messages with tool definitions and get a response.
+    ///
+    /// Default implementation delegates to `complete()`, ignoring tools.
+    /// Providers that support tool calling should override this.
+    async fn complete_with_tools(
+        &self,
+        messages: &[Message],
+        _tools: &[ToolDefinition],
+    ) -> Result<Message, ProviderError> {
+        self.complete(messages).await
+    }
+
+    /// Stream response with tool definitions.
+    ///
+    /// Default implementation delegates to `stream()`, ignoring tools.
+    /// Providers that support tool calling should override this.
+    fn stream_with_tools(
+        &self,
+        messages: &[Message],
+        _tools: &[ToolDefinition],
+    ) -> Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send + '_>> {
+        self.stream(messages)
+    }
 }

@@ -11,7 +11,8 @@ use futures::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 
 use super::{LlmProvider, ProviderError, StreamEvent};
-use crate::message::{Message, Role};
+use crate::mcp::ToolDefinition;
+use crate::message::{Message, Role, ToolCallData};
 
 /// Default max tokens for API responses.
 const DEFAULT_MAX_TOKENS: u32 = 1024;
@@ -62,6 +63,102 @@ impl DeepSeekProvider {
             model: model.into(),
         }
     }
+
+    /// Build API messages from conversation messages.
+    fn build_api_messages(messages: &[Message]) -> Vec<ApiMessage> {
+        messages
+            .iter()
+            .map(|m| {
+                let role = match m.role {
+                    Role::System => "system".to_string(),
+                    Role::User => "user".to_string(),
+                    Role::Assistant => "assistant".to_string(),
+                    Role::Tool => "tool".to_string(),
+                };
+
+                ApiMessage {
+                    role,
+                    content: Some(m.content.clone()),
+                    tool_calls: None,
+                    tool_call_id: m.tool_call_id.clone(),
+                }
+            })
+            .collect()
+    }
+
+    /// Send a complete request and parse the response.
+    async fn complete_request(&self, request: &ApiRequest) -> Result<Message, ProviderError> {
+        let response = self
+            .client
+            .post(API_ENDPOINT)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("Content-Type", "application/json")
+            .json(request)
+            .send()
+            .await
+            .map_err(|e| ProviderError::RequestFailed(e.to_string()))?;
+
+        let status = response.status();
+
+        if status == reqwest::StatusCode::UNAUTHORIZED {
+            let error_body: ApiError = response.json().await.unwrap_or_else(|_| ApiError {
+                error: ErrorDetail {
+                    message: "Invalid API key".to_string(),
+                },
+            });
+            return Err(ProviderError::AuthenticationError(error_body.error.message));
+        }
+
+        if !status.is_success() {
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "unknown error".to_string());
+            return Err(ProviderError::RequestFailed(format!(
+                "HTTP {}: {}",
+                status, error_text
+            )));
+        }
+
+        let api_response: ApiResponse =
+            response
+                .json()
+                .await
+                .map_err(|e| ProviderError::ProviderError {
+                    message: format!("failed to parse response: {}", e),
+                })?;
+
+        let choice = api_response
+            .choices
+            .first()
+            .ok_or(ProviderError::ProviderError {
+                message: "no choices in response".to_string(),
+            })?;
+
+        let content = choice.message.content.clone().unwrap_or_default();
+        let mut msg = Message::new(Role::Assistant, content);
+
+        // Parse tool calls if present
+        if let Some(ref tool_calls) = choice.message.tool_calls {
+            let parsed: Vec<ToolCallData> = tool_calls
+                .iter()
+                .map(|tc| {
+                    let input: serde_json::Value = serde_json::from_str(&tc.function.arguments)
+                        .unwrap_or(serde_json::json!({}));
+                    ToolCallData {
+                        id: tc.id.clone(),
+                        name: tc.function.name.clone(),
+                        input,
+                    }
+                })
+                .collect();
+            if !parsed.is_empty() {
+                msg.tool_calls = Some(parsed);
+            }
+        }
+
+        Ok(msg)
+    }
 }
 
 /// Request body for DeepSeek Chat Completions API (OpenAI-compatible).
@@ -73,6 +170,9 @@ struct ApiRequest {
     messages: Vec<ApiMessage>,
     /// Maximum tokens to generate.
     max_tokens: u32,
+    /// Optional tool definitions.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tools: Option<Vec<DeepSeekTool>>,
 }
 
 /// Request body for streaming Chat Completions API.
@@ -86,15 +186,58 @@ struct StreamingApiRequest {
     max_tokens: u32,
     /// Enable streaming mode.
     stream: bool,
+    /// Optional tool definitions.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tools: Option<Vec<DeepSeekTool>>,
+}
+
+/// Tool definition in DeepSeek API format (OpenAI-compatible).
+#[derive(Debug, Serialize)]
+struct DeepSeekTool {
+    #[serde(rename = "type")]
+    tool_type: String,
+    function: DeepSeekFunction,
+}
+
+/// Function definition within a tool.
+#[derive(Debug, Serialize)]
+struct DeepSeekFunction {
+    name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    parameters: serde_json::Value,
 }
 
 /// A single message in the API request.
 #[derive(Debug, Serialize)]
 struct ApiMessage {
-    /// Message role ("system", "user", or "assistant").
+    /// Message role ("system", "user", "assistant", or "tool").
     role: String,
     /// Message content.
-    content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    content: Option<String>,
+    /// Tool calls (present in assistant messages with tool use).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_calls: Option<Vec<DeepSeekToolCall>>,
+    /// Tool call ID (present in tool result messages).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_call_id: Option<String>,
+}
+
+/// Tool call in API response.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct DeepSeekToolCall {
+    id: String,
+    #[serde(rename = "type")]
+    call_type: String,
+    function: DeepSeekToolCallFunction,
+}
+
+/// Function call data.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct DeepSeekToolCallFunction {
+    name: String,
+    arguments: String,
 }
 
 /// Response body from DeepSeek Chat Completions API.
@@ -115,7 +258,10 @@ struct Choice {
 #[derive(Debug, Deserialize)]
 struct ChoiceMessage {
     /// The generated content.
-    content: String,
+    #[serde(default)]
+    content: Option<String>,
+    /// Tool calls requested by the model.
+    tool_calls: Option<Vec<DeepSeekToolCall>>,
 }
 
 /// Error response from DeepSeek API.
@@ -159,76 +305,57 @@ struct StreamDelta {
     content: Option<String>,
 }
 
+/// Convert ToolDefinitions to DeepSeek format (OpenAI-compatible).
+fn to_deepseek_tools(tools: &[ToolDefinition]) -> Option<Vec<DeepSeekTool>> {
+    if tools.is_empty() {
+        None
+    } else {
+        Some(
+            tools
+                .iter()
+                .map(|t| DeepSeekTool {
+                    tool_type: "function".to_string(),
+                    function: DeepSeekFunction {
+                        name: t.name.clone(),
+                        description: t.description.clone(),
+                        parameters: t.input_schema.clone(),
+                    },
+                })
+                .collect(),
+        )
+    }
+}
+
 #[async_trait]
 impl LlmProvider for DeepSeekProvider {
     async fn complete(&self, messages: &[Message]) -> Result<Message, ProviderError> {
-        // Convert all messages to API format (system messages go in messages array)
-        let api_messages: Vec<ApiMessage> = messages
-            .iter()
-            .map(|m| ApiMessage {
-                role: match m.role {
-                    Role::System => "system".to_string(),
-                    Role::User => "user".to_string(),
-                    Role::Assistant => "assistant".to_string(),
-                },
-                content: m.content.clone(),
-            })
-            .collect();
+        let api_messages = Self::build_api_messages(messages);
 
         let request = ApiRequest {
             model: self.model.clone(),
             messages: api_messages,
             max_tokens: DEFAULT_MAX_TOKENS,
+            tools: None,
         };
 
-        let response = self
-            .client
-            .post(API_ENDPOINT)
-            .header("Authorization", format!("Bearer {}", self.api_key))
-            .header("Content-Type", "application/json")
-            .json(&request)
-            .send()
-            .await
-            .map_err(|e| ProviderError::RequestFailed(e.to_string()))?;
+        self.complete_request(&request).await
+    }
 
-        let status = response.status();
+    async fn complete_with_tools(
+        &self,
+        messages: &[Message],
+        tools: &[ToolDefinition],
+    ) -> Result<Message, ProviderError> {
+        let api_messages = Self::build_api_messages(messages);
 
-        if status == reqwest::StatusCode::UNAUTHORIZED {
-            let error_body: ApiError = response.json().await.unwrap_or_else(|_| ApiError {
-                error: ErrorDetail {
-                    message: "Invalid API key".to_string(),
-                },
-            });
-            return Err(ProviderError::AuthenticationError(error_body.error.message));
-        }
+        let request = ApiRequest {
+            model: self.model.clone(),
+            messages: api_messages,
+            max_tokens: DEFAULT_MAX_TOKENS,
+            tools: to_deepseek_tools(tools),
+        };
 
-        if !status.is_success() {
-            let error_text = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "unknown error".to_string());
-            return Err(ProviderError::RequestFailed(format!(
-                "HTTP {}: {}",
-                status, error_text
-            )));
-        }
-
-        let api_response: ApiResponse =
-            response
-                .json()
-                .await
-                .map_err(|e| ProviderError::ProviderError {
-                    message: format!("failed to parse response: {}", e),
-                })?;
-
-        // Extract content from first choice
-        let content = api_response
-            .choices
-            .first()
-            .map(|c| c.message.content.clone())
-            .unwrap_or_default();
-
-        Ok(Message::new(Role::Assistant, content))
+        self.complete_request(&request).await
     }
 
     fn stream(
@@ -243,23 +370,14 @@ impl LlmProvider for DeepSeekProvider {
 
         Box::pin(async_stream::stream! {
             // Convert all messages to API format
-            let api_messages: Vec<ApiMessage> = messages
-                .iter()
-                .map(|m| ApiMessage {
-                    role: match m.role {
-                        Role::System => "system".to_string(),
-                        Role::User => "user".to_string(),
-                        Role::Assistant => "assistant".to_string(),
-                    },
-                    content: m.content.clone(),
-                })
-                .collect();
+            let api_messages = DeepSeekProvider::build_api_messages(&messages);
 
             let request = StreamingApiRequest {
                 model,
                 messages: api_messages,
                 max_tokens: DEFAULT_MAX_TOKENS,
                 stream: true,
+                tools: None,
             };
 
             // Send request
@@ -356,9 +474,12 @@ mod tests {
             model: "deepseek-chat".to_string(),
             messages: vec![ApiMessage {
                 role: "user".to_string(),
-                content: "Hello, DeepSeek".to_string(),
+                content: Some("Hello, DeepSeek".to_string()),
+                tool_calls: None,
+                tool_call_id: None,
             }],
             max_tokens: 1024,
+            tools: None,
         };
 
         let json = serde_json::to_value(&request).unwrap();
@@ -367,6 +488,7 @@ mod tests {
         assert_eq!(json["max_tokens"], 1024);
         assert_eq!(json["messages"][0]["role"], "user");
         assert_eq!(json["messages"][0]["content"], "Hello, DeepSeek");
+        assert!(json.get("tools").is_none());
     }
 
     #[test]
@@ -376,14 +498,19 @@ mod tests {
             messages: vec![
                 ApiMessage {
                     role: "system".to_string(),
-                    content: "You are a helpful assistant.".to_string(),
+                    content: Some("You are a helpful assistant.".to_string()),
+                    tool_calls: None,
+                    tool_call_id: None,
                 },
                 ApiMessage {
                     role: "user".to_string(),
-                    content: "Hello".to_string(),
+                    content: Some("Hello".to_string()),
+                    tool_calls: None,
+                    tool_call_id: None,
                 },
             ],
             max_tokens: 1024,
+            tools: None,
         };
 
         let json = serde_json::to_value(&request).unwrap();
@@ -427,7 +554,7 @@ mod tests {
         assert_eq!(response.choices.len(), 1);
         assert_eq!(
             response.choices[0].message.content,
-            "Hello! How can I help you today?"
+            Some("Hello! How can I help you today?".to_string())
         );
     }
 
@@ -452,10 +579,13 @@ mod tests {
             model: "deepseek-chat".to_string(),
             messages: vec![ApiMessage {
                 role: "user".to_string(),
-                content: "Hello".to_string(),
+                content: Some("Hello".to_string()),
+                tool_calls: None,
+                tool_call_id: None,
             }],
             max_tokens: 1024,
             stream: true,
+            tools: None,
         };
 
         let json = serde_json::to_value(&request).unwrap();
@@ -553,5 +683,110 @@ mod tests {
 
         // No content in first event
         assert!(chunk.choices[0].delta.content.is_none());
+    }
+
+    #[test]
+    fn test_complete_with_tools_serialization() {
+        let tools = vec![DeepSeekTool {
+            tool_type: "function".to_string(),
+            function: DeepSeekFunction {
+                name: "get_weather".to_string(),
+                description: Some("Get weather".to_string()),
+                parameters: serde_json::json!({
+                    "type": "object",
+                    "properties": {"location": {"type": "string"}}
+                }),
+            },
+        }];
+
+        let request = ApiRequest {
+            model: "deepseek-chat".to_string(),
+            messages: vec![ApiMessage {
+                role: "user".to_string(),
+                content: Some("What's the weather?".to_string()),
+                tool_calls: None,
+                tool_call_id: None,
+            }],
+            max_tokens: 1024,
+            tools: Some(tools),
+        };
+
+        let json = serde_json::to_value(&request).unwrap();
+        assert!(json.get("tools").is_some());
+        assert_eq!(json["tools"][0]["type"], "function");
+        assert_eq!(json["tools"][0]["function"]["name"], "get_weather");
+    }
+
+    #[test]
+    fn test_tool_call_response_parsing() {
+        let json = r#"{
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": null,
+                    "tool_calls": [{
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {
+                            "name": "get_weather",
+                            "arguments": "{\"location\":\"London\"}"
+                        }
+                    }]
+                }
+            }]
+        }"#;
+
+        let response: ApiResponse = serde_json::from_str(json).unwrap();
+        let tool_calls = response.choices[0].message.tool_calls.as_ref().unwrap();
+        assert_eq!(tool_calls.len(), 1);
+        assert_eq!(tool_calls[0].id, "call_1");
+        assert_eq!(tool_calls[0].function.name, "get_weather");
+    }
+
+    #[test]
+    fn test_tool_role_message_serialization() {
+        let messages = vec![Message::tool_result("call_1", "Sunny, 20C")];
+        let api_messages = DeepSeekProvider::build_api_messages(&messages);
+
+        assert_eq!(api_messages[0].role, "tool");
+        assert_eq!(api_messages[0].tool_call_id, Some("call_1".to_string()));
+        assert_eq!(api_messages[0].content, Some("Sunny, 20C".to_string()));
+    }
+
+    #[test]
+    fn test_complete_with_tools_no_tools() {
+        let request = ApiRequest {
+            model: "deepseek-chat".to_string(),
+            messages: vec![ApiMessage {
+                role: "user".to_string(),
+                content: Some("Hello".to_string()),
+                tool_calls: None,
+                tool_call_id: None,
+            }],
+            max_tokens: 1024,
+            tools: None,
+        };
+
+        let json = serde_json::to_value(&request).unwrap();
+        assert!(json.get("tools").is_none());
+    }
+
+    #[test]
+    fn test_to_deepseek_tools_empty() {
+        let result = to_deepseek_tools(&[]);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_to_deepseek_tools_conversion() {
+        let tools = vec![ToolDefinition {
+            name: "test_tool".to_string(),
+            description: Some("A test tool".to_string()),
+            input_schema: serde_json::json!({"type": "object"}),
+        }];
+        let result = to_deepseek_tools(&tools).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].tool_type, "function");
+        assert_eq!(result[0].function.name, "test_tool");
     }
 }

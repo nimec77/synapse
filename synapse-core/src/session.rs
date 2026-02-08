@@ -98,6 +98,10 @@ pub struct StoredMessage {
     pub role: Role,
     /// The text content of the message.
     pub content: String,
+    /// JSON-serialized tool calls (for assistant messages with tool calls).
+    pub tool_calls: Option<String>,
+    /// JSON-serialized tool results (for tool result messages).
+    pub tool_results: Option<String>,
     /// When the message was created.
     pub timestamp: DateTime<Utc>,
 }
@@ -106,14 +110,29 @@ impl StoredMessage {
     /// Create a new stored message.
     ///
     /// Generates a UUID v7 (time-sortable) for the message ID.
+    /// Tool-related fields default to `None`.
     pub fn new(session_id: Uuid, role: Role, content: impl Into<String>) -> Self {
         Self {
             id: Uuid::now_v7(),
             session_id,
             role,
             content: content.into(),
+            tool_calls: None,
+            tool_results: None,
             timestamp: Utc::now(),
         }
+    }
+
+    /// Set tool calls JSON data on this message.
+    pub fn with_tool_calls(mut self, tool_calls: impl Into<String>) -> Self {
+        self.tool_calls = Some(tool_calls.into());
+        self
+    }
+
+    /// Set tool results JSON data on this message.
+    pub fn with_tool_results(mut self, tool_results: impl Into<String>) -> Self {
+        self.tool_results = Some(tool_results.into());
+        self
     }
 }
 
@@ -195,6 +214,8 @@ mod tests {
         assert_eq!(msg.session_id, session_id);
         assert_eq!(msg.role, Role::User);
         assert_eq!(msg.content, "Hello!");
+        assert!(msg.tool_calls.is_none());
+        assert!(msg.tool_results.is_none());
         assert!(msg.timestamp <= Utc::now());
     }
 
@@ -223,5 +244,33 @@ mod tests {
         let cloned = original.clone();
 
         assert_eq!(original, cloned);
+    }
+
+    #[test]
+    fn test_stored_message_with_tool_calls() {
+        let session_id = Uuid::new_v4();
+        let msg = StoredMessage::new(session_id, Role::Assistant, "")
+            .with_tool_calls(r#"[{"id":"call_1","name":"test","input":{}}]"#);
+
+        assert!(msg.tool_calls.is_some());
+        assert_eq!(
+            msg.tool_calls.as_deref(),
+            Some(r#"[{"id":"call_1","name":"test","input":{}}]"#)
+        );
+        assert!(msg.tool_results.is_none());
+    }
+
+    #[test]
+    fn test_stored_message_with_tool_results() {
+        let session_id = Uuid::new_v4();
+        let msg = StoredMessage::new(session_id, Role::Tool, "result content")
+            .with_tool_results(r#"{"tool_call_id":"call_1"}"#);
+
+        assert!(msg.tool_results.is_some());
+        assert_eq!(
+            msg.tool_results.as_deref(),
+            Some(r#"{"tool_call_id":"call_1"}"#)
+        );
+        assert!(msg.tool_calls.is_none());
     }
 }
