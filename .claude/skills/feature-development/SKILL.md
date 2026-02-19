@@ -5,7 +5,18 @@ allowed-tools: Read, Write, Glob, Grep, Skill, Task, AskUserQuestion
 model: inherit
 ---
 
-You are the orchestrator of feature `$1` ("$ARGUMENTS").
+## Argument Parsing
+
+Parse `$ARGUMENTS` to extract positional arguments:
+- **TICKET_ID**: first whitespace-delimited token from `$ARGUMENTS`
+- **SHORT_TITLE**: quoted string (if present) from `$ARGUMENTS`
+- **DESCRIPTION_FILE**: remaining token (file path, strip leading `@` if present) from `$ARGUMENTS`
+
+Use TICKET_ID wherever the ticket identifier is needed below. Do NOT use the raw `$1` value — it may be incorrect due to argument parsing issues.
+
+---
+
+You are the orchestrator of feature `TICKET_ID` ("$ARGUMENTS").
 
 ## EXECUTION CONTRACT
 
@@ -15,12 +26,12 @@ You are the orchestrator of feature `$1` ("$ARGUMENTS").
 
 ### 1. Check current status
 
-Use Glob to check which artifacts already exist for ticket `$1`:
-- PRD: `docs/prd/$1.prd.md`
-- Plan: `docs/plan/$1.md`
-- Tasklist: `docs/tasklist/$1.md`
-- QA Report: `reports/qa/$1.md`
-- Summary: `docs/summaries/$1-summary.md`
+Use Glob to check which artifacts already exist for ticket TICKET_ID:
+- PRD: `docs/prd/TICKET_ID.prd.md`
+- Plan: `docs/plan/TICKET_ID.md`
+- Tasklist: `docs/tasklist/TICKET_ID.md`
+- QA Report: `reports/qa/TICKET_ID.md`
+- Summary: `docs/summaries/TICKET_ID-summary.md`
 
 **After Glob returns, execute step 2.**
 
@@ -28,11 +39,11 @@ Use Glob to check which artifacts already exist for ticket `$1`:
 
 ### 2. Gate: PRD
 
-Skip if `docs/prd/$1.prd.md` exists. Otherwise:
+Skip if `docs/prd/TICKET_ID.prd.md` exists. Otherwise:
 
 **After this Task returns, execute step 3.**
 
-- Task: `subagent_type: "general-purpose"`, `description: "Create $1 PRD"`, `prompt: "Create a PRD for ticket $1. Read '.claude/skills/analysis/SKILL.md' for instructions. Arguments: $1 $2 $3"`
+- Task: `subagent_type: "general-purpose"`, `description: "Create TICKET_ID PRD"`, `prompt: "Create a PRD for ticket TICKET_ID. Read '.claude/skills/analysis/SKILL.md' for instructions. Arguments: TICKET_ID SHORT_TITLE DESCRIPTION_FILE"`
 
 ---
 
@@ -52,21 +63,21 @@ Skip if `docs/prd/$1.prd.md` exists. Otherwise:
 
 ### 4. Gate: Research
 
-Skip if `docs/plan/$1.md` exists (research feeds into the plan). Otherwise:
+Skip if `docs/plan/TICKET_ID.md` exists (research feeds into the plan). Otherwise:
 
 **After this Task returns, execute step 5.**
 
-- Task: `subagent_type: "general-purpose"`, `description: "Research $1"`, `prompt: "Research the codebase for ticket $1. Read '.claude/skills/research/SKILL.md' for instructions. Arguments: $1"`
+- Task: `subagent_type: "general-purpose"`, `description: "Research TICKET_ID"`, `prompt: "Research the codebase for ticket TICKET_ID. Read '.claude/skills/research/SKILL.md' for instructions. Arguments: TICKET_ID"`
 
 ---
 
 ### 5. Gate: Plan
 
-Skip if `docs/plan/$1.md` exists. Otherwise:
+Skip if `docs/plan/TICKET_ID.md` exists. Otherwise:
 
 **After this Task returns, execute step 6.**
 
-- Task: `subagent_type: "general-purpose"`, `description: "Plan $1"`, `prompt: "Create an implementation plan for ticket $1. Read '.claude/skills/plan/SKILL.md' for instructions. Arguments: $1"`
+- Task: `subagent_type: "general-purpose"`, `description: "Plan TICKET_ID"`, `prompt: "Create an implementation plan for ticket TICKET_ID. Read '.claude/skills/plan/SKILL.md' for instructions. Arguments: TICKET_ID"`
 
 ---
 
@@ -86,21 +97,21 @@ Skip if `docs/plan/$1.md` exists. Otherwise:
 
 ### 7. Gate: Tasklist
 
-Skip if `docs/tasklist/$1.md` exists. Otherwise:
+Skip if `docs/tasklist/TICKET_ID.md` exists. Otherwise:
 
 **After this Task returns, execute step 8.**
 
-- Task: `subagent_type: "general-purpose"`, `description: "Create $1 tasklist"`, `prompt: "Create a tasklist for ticket $1. Read '.claude/skills/tasklist/SKILL.md' for instructions. Arguments: $1"`
+- Task: `subagent_type: "general-purpose"`, `description: "Create TICKET_ID tasklist"`, `prompt: "Create a tasklist for ticket TICKET_ID. Read '.claude/skills/tasklist/SKILL.md' for instructions. Arguments: TICKET_ID"`
 
 ---
 
 ### 8. Gate: Implementation
 
-Skip if tasklist `docs/tasklist/$1.md` contains no unchecked items (`- [ ]`). Otherwise:
+Skip if tasklist `docs/tasklist/TICKET_ID.md` contains no unchecked items (`- [ ]`). Otherwise:
 
 **After this Task returns, execute step 9.**
 
-- Task: `subagent_type: "general-purpose"`, `description: "Implement $1 tasks"`, `prompt: "Execute the implement-orchestrated workflow for ticket $1. Read '.claude/skills/implement-orchestrated/SKILL.md' for instructions. Arguments: $1 --auto"`
+- Task: `subagent_type: "general-purpose"`, `description: "Implement TICKET_ID tasks"`, `prompt: "Execute the implement-orchestrated workflow for ticket TICKET_ID. Read '.claude/skills/implement-orchestrated/SKILL.md' for instructions. Arguments: TICKET_ID --auto"`
 
 ---
 
@@ -124,7 +135,7 @@ Skip if currently in a review loop (returning from step 10). Otherwise:
 
 **After this Task returns, parse the reviewer output and decide: loop or continue.**
 
-- Task: `subagent_type: "general-purpose"`, `description: "Review $1 changes"`, `prompt: "Review changes for ticket $1. Read '.claude/skills/run-reviewer/SKILL.md' for instructions. Arguments: $1"`
+- Task: `subagent_type: "general-purpose"`, `description: "Review TICKET_ID changes"`, `prompt: "Review changes for ticket TICKET_ID. Read '.claude/skills/run-reviewer/SKILL.md' for instructions. Arguments: TICKET_ID"`
 
 **Decision after Task returns:**
 - If `REVIEW_BLOCKED` or `REVIEW_NEEDS_FIXES`: read tasklist to confirm new unchecked tasks exist, increment review loop counter, and **go back to step 8**. If loop count exceeds 3, stop with: "Review loop exceeded 3 iterations. Manual intervention required."
@@ -134,21 +145,21 @@ Skip if currently in a review loop (returning from step 10). Otherwise:
 
 ### 11. Gate: QA
 
-Skip if `reports/qa/$1.md` exists. Otherwise:
+Skip if `reports/qa/TICKET_ID.md` exists. Otherwise:
 
 **After this Task returns, execute step 12.**
 
-- Task: `subagent_type: "general-purpose"`, `description: "QA for $1"`, `prompt: "Generate QA plan and report for ticket $1. Read '.claude/skills/qa/SKILL.md' for instructions. Arguments: $1"`
+- Task: `subagent_type: "general-purpose"`, `description: "QA for TICKET_ID"`, `prompt: "Generate QA plan and report for ticket TICKET_ID. Read '.claude/skills/qa/SKILL.md' for instructions. Arguments: TICKET_ID"`
 
 ---
 
 ### 12. Gate: Documentation
 
-Skip if `docs/summaries/$1-summary.md` exists. Otherwise:
+Skip if `docs/summaries/TICKET_ID-summary.md` exists. Otherwise:
 
 **After this Task returns, execute step 13.**
 
-- Task: `subagent_type: "general-purpose"`, `description: "Update docs for $1"`, `prompt: "Update documentation for ticket $1. Read '.claude/skills/docs-update/SKILL.md' for instructions. Arguments: $1"`
+- Task: `subagent_type: "general-purpose"`, `description: "Update docs for TICKET_ID"`, `prompt: "Update documentation for ticket TICKET_ID. Read '.claude/skills/docs-update/SKILL.md' for instructions. Arguments: TICKET_ID"`
 
 ---
 
@@ -156,18 +167,18 @@ Skip if `docs/summaries/$1-summary.md` exists. Otherwise:
 
 **After this Skill returns, execute step 14.**
 
-- Skill: `skill: "validate"`, `args: "$1"`
+- Skill: `skill: "validate"`, `args: "TICKET_ID"`
 
 ---
 
 ### 14. Sync description file
 
-Skip if `$3` is empty, not provided, or the file does not exist.
+Skip if DESCRIPTION_FILE is empty, not provided, or the file does not exist.
 
-1. Read the description file at path `$3`.
+1. Read the description file at path DESCRIPTION_FILE.
 2. Check if it's a phase file (name matches `phase-*.md` or `phase-[0-9]*.md`) or contains checkbox tasks (`- [ ]` or `- [x]`).
 3. If it contains tasks:
-   - Read completed tasklist from `docs/tasklist/$1.md`.
+   - Read completed tasklist from `docs/tasklist/TICKET_ID.md`.
    - Compare tasks in description file against actually completed tasks.
    - If discrepancies found (tasks in description file NOT completed): list mismatches, display error, and stop.
    - If all tasks match: update description file changing all `- [ ]` to `- [x]`, report count.
@@ -187,4 +198,4 @@ Skip if `$3` is empty, not provided, or the file does not exist.
 
 ### WORKFLOW COMPLETE
 
-All gates have passed. Report final status to the user: feature `$1` is complete. List which gates were executed and which were skipped.
+All gates have passed. Report final status to the user: feature `TICKET_ID` is complete. List which gates were executed and which were skipped.
