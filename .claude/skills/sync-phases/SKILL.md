@@ -1,7 +1,7 @@
 ---
 description: "Sync phase completion status between tasklist.md and phase-*.md files"
 allowed-tools: Read, Write, Glob, Grep
-model: inherit
+model: sonnet
 ---
 
 ## Overview

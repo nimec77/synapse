@@ -2,7 +2,7 @@
 description: "Review changes for a ticket"
 argument-hint: "[ticket-id]"
 allowed-tools: Read, Write, Glob, Grep, rust-analyzer-lsp, AskUserQuestion
-model: inherit
+model: opus
 ---
 
 Use the `reviewer` subagent.

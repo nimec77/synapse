@@ -2,7 +2,7 @@
 description: "Quickly implement tasks from a phase file with automated coding and review"
 argument-hint: "[phase-file-path]"
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Task, AskUserQuestion
-model: inherit
+model: sonnet
 ---
 
 ## Input Validation
@@ -54,6 +54,7 @@ Invoke the `coder` subagent via Task tool:
 ```
 Task(
   subagent_type: "coder",
+  model: "opus",
   prompt: "Implement the following task:
     <task description>
 
@@ -75,6 +76,7 @@ Invoke the `reviewer` subagent via Task tool:
 ```
 Task(
   subagent_type: "reviewer",
+  model: "sonnet",
   prompt: "Review and verify the following task implementation:
     <task description>
 

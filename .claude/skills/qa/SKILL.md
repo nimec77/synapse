@@ -2,7 +2,7 @@
 description: "Prepare a QA plan and report for a ticket or release"
 argument-hint: "[ticket]"
 allowed-tools: Read, Write, Glob, Grep
-model: inherit
+model: sonnet
 ---
 
 Use the `qa` subagent.

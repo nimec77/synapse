@@ -2,7 +2,7 @@
 description: "End-to-end AI-driven feature workflow: PRD -> plan -> tasks -> implementation -> review -> QA -> docs"
 argument-hint: "[ticket-id] [short-title] [description-file]"
 allowed-tools: Read, Write, Glob, Grep, Skill, Task, AskUserQuestion
-model: inherit
+model: sonnet
 ---
 
 ## Argument Parsing
@@ -43,7 +43,7 @@ Skip if `docs/prd/TICKET_ID.prd.md` exists. Otherwise:
 
 **After this Task returns, execute step 3.**
 
-- Task: `subagent_type: "general-purpose"`, `description: "Create TICKET_ID PRD"`, `prompt: "Create a PRD for ticket TICKET_ID. Read '.claude/skills/analysis/SKILL.md' for instructions. Arguments: TICKET_ID SHORT_TITLE DESCRIPTION_FILE"`
+- Task: `subagent_type: "general-purpose"`, `model: "opus"`, `description: "Create TICKET_ID PRD"`, `prompt: "Create a PRD for ticket TICKET_ID. Read '.claude/skills/analysis/SKILL.md' for instructions. Arguments: TICKET_ID SHORT_TITLE DESCRIPTION_FILE"`
 
 ---
 
@@ -67,7 +67,7 @@ Skip if `docs/plan/TICKET_ID.md` exists (research feeds into the plan). Otherwis
 
 **After this Task returns, execute step 5.**
 
-- Task: `subagent_type: "general-purpose"`, `description: "Research TICKET_ID"`, `prompt: "Research the codebase for ticket TICKET_ID. Read '.claude/skills/research/SKILL.md' for instructions. Arguments: TICKET_ID"`
+- Task: `subagent_type: "general-purpose"`, `model: "opus"`, `description: "Research TICKET_ID"`, `prompt: "Research the codebase for ticket TICKET_ID. Read '.claude/skills/research/SKILL.md' for instructions. Arguments: TICKET_ID"`
 
 ---
 
@@ -77,7 +77,7 @@ Skip if `docs/plan/TICKET_ID.md` exists. Otherwise:
 
 **After this Task returns, execute step 6.**
 
-- Task: `subagent_type: "general-purpose"`, `description: "Plan TICKET_ID"`, `prompt: "Create an implementation plan for ticket TICKET_ID. Read '.claude/skills/plan/SKILL.md' for instructions. Arguments: TICKET_ID"`
+- Task: `subagent_type: "general-purpose"`, `model: "opus"`, `description: "Plan TICKET_ID"`, `prompt: "Create an implementation plan for ticket TICKET_ID. Read '.claude/skills/plan/SKILL.md' for instructions. Arguments: TICKET_ID"`
 
 ---
 
@@ -101,7 +101,7 @@ Skip if `docs/tasklist/TICKET_ID.md` exists. Otherwise:
 
 **After this Task returns, execute step 8.**
 
-- Task: `subagent_type: "general-purpose"`, `description: "Create TICKET_ID tasklist"`, `prompt: "Create a tasklist for ticket TICKET_ID. Read '.claude/skills/tasklist/SKILL.md' for instructions. Arguments: TICKET_ID"`
+- Task: `subagent_type: "general-purpose"`, `model: "sonnet"`, `description: "Create TICKET_ID tasklist"`, `prompt: "Create a tasklist for ticket TICKET_ID. Read '.claude/skills/tasklist/SKILL.md' for instructions. Arguments: TICKET_ID"`
 
 ---
 
@@ -111,7 +111,7 @@ Skip if tasklist `docs/tasklist/TICKET_ID.md` contains no unchecked items (`- [ 
 
 **After this Task returns, execute step 9.**
 
-- Task: `subagent_type: "general-purpose"`, `description: "Implement TICKET_ID tasks"`, `prompt: "Execute the implement-orchestrated workflow for ticket TICKET_ID. Read '.claude/skills/implement-orchestrated/SKILL.md' for instructions. Arguments: TICKET_ID --auto"`
+- Task: `subagent_type: "general-purpose"`, `model: "sonnet"`, `description: "Implement TICKET_ID tasks"`, `prompt: "Execute the implement-orchestrated workflow for ticket TICKET_ID. Read '.claude/skills/implement-orchestrated/SKILL.md' for instructions. Arguments: TICKET_ID --auto"`
 
 ---
 
@@ -135,7 +135,7 @@ Skip if currently in a review loop (returning from step 10). Otherwise:
 
 **After this Task returns, parse the reviewer output and decide: loop or continue.**
 
-- Task: `subagent_type: "general-purpose"`, `description: "Review TICKET_ID changes"`, `prompt: "Review changes for ticket TICKET_ID. Read '.claude/skills/run-reviewer/SKILL.md' for instructions. Arguments: TICKET_ID"`
+- Task: `subagent_type: "general-purpose"`, `model: "opus"`, `description: "Review TICKET_ID changes"`, `prompt: "Review changes for ticket TICKET_ID. Read '.claude/skills/run-reviewer/SKILL.md' for instructions. Arguments: TICKET_ID"`
 
 **Decision after Task returns:**
 - If `REVIEW_BLOCKED` or `REVIEW_NEEDS_FIXES`: read tasklist to confirm new unchecked tasks exist, increment review loop counter, and **go back to step 8**. If loop count exceeds 3, stop with: "Review loop exceeded 3 iterations. Manual intervention required."
@@ -149,7 +149,7 @@ Skip if `reports/qa/TICKET_ID.md` exists. Otherwise:
 
 **After this Task returns, execute step 12.**
 
-- Task: `subagent_type: "general-purpose"`, `description: "QA for TICKET_ID"`, `prompt: "Generate QA plan and report for ticket TICKET_ID. Read '.claude/skills/qa/SKILL.md' for instructions. Arguments: TICKET_ID"`
+- Task: `subagent_type: "general-purpose"`, `model: "sonnet"`, `description: "QA for TICKET_ID"`, `prompt: "Generate QA plan and report for ticket TICKET_ID. Read '.claude/skills/qa/SKILL.md' for instructions. Arguments: TICKET_ID"`
 
 ---
 
@@ -159,7 +159,7 @@ Skip if `docs/summaries/TICKET_ID-summary.md` exists. Otherwise:
 
 **After this Task returns, execute step 13.**
 
-- Task: `subagent_type: "general-purpose"`, `description: "Update docs for TICKET_ID"`, `prompt: "Update documentation for ticket TICKET_ID. Read '.claude/skills/docs-update/SKILL.md' for instructions. Arguments: TICKET_ID"`
+- Task: `subagent_type: "general-purpose"`, `model: "sonnet"`, `description: "Update docs for TICKET_ID"`, `prompt: "Update documentation for ticket TICKET_ID. Read '.claude/skills/docs-update/SKILL.md' for instructions. Arguments: TICKET_ID"`
 
 ---
 

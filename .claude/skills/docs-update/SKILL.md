@@ -2,7 +2,7 @@
 description: "Update documentation based on ticket work"
 argument-hint: "[ticket-id]"
 allowed-tools: Read, Write, Glob, Grep
-model: inherit
+model: sonnet
 ---
 
 Use the `tech-writer` subagent.

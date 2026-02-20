@@ -2,7 +2,7 @@
 description: "Implement a task with separate code and test phases, automated verification, and refinement"
 argument-hint: "[ticket-id]"
 allowed-tools: Read, Write, Glob, Grep, Bash, Task, rust-analyzer-lsp, AskUserQuestion
-model: inherit
+model: sonnet
 ---
 
 ## Ticket Resolution
@@ -190,6 +190,7 @@ Use the Task tool to invoke agents. **Always include the requirements reminder.*
 ```
 Task(
   subagent_type: "code-writer",
+  model: "opus",
   prompt: "Implement [task description]. Files: [list]. Follow docs/conventions.md.
 
   CRITICAL: Implement according to the requirements in the PRD and plan. If existing code contradicts requirements, modify the code to match requirements. Do NOT modify requirements documents. Do NOT skip requirements because existing code 'works differently'.",
@@ -200,6 +201,7 @@ Task(
 ```
 Task(
   subagent_type: "test-writer",
+  model: "sonnet",
   prompt: "Write tests for [description]. Test files: [list]. Follow docs/conventions.md.
 
   CRITICAL: Tests must verify the requirements from the PRD/plan, not just existing behavior. If existing code doesn't match requirements, the tests should expect the REQUIRED behavior, not the current behavior.",

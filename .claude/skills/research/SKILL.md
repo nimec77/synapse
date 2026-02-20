@@ -2,7 +2,7 @@
 description: "Gather technical context and create a research document for the ticket"
 argument-hint: "[ticket-id]"
 allowed-tools: Read, Write, Glob, Grep, AskUserQuestion, rust-analyzer-lsp
-model: inherit
+model: opus
 ---
 
 Use the `researcher` subagent.

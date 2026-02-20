@@ -1,7 +1,7 @@
 ---
 description: "Continuous phase loop: sync status, implement next phase, commit, repeat"
 allowed-tools: Read, Write, Edit, Glob, Grep, Task, Bash, AskUserQuestion
-model: inherit
+model: sonnet
 ---
 
 ## Argument Parsing
@@ -111,6 +111,7 @@ Invoke the quick-implement workflow via Task subagent:
 ```
 Task(
   subagent_type: "general-purpose",
+  model: "sonnet",
   prompt: "Read `.claude/skills/quick-implement/SKILL.md` for full instructions.
            Execute it with argument: `{PHASE_FILE}`
            (e.g., `docs/phase/phase-17.md`).

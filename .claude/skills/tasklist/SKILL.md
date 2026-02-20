@@ -2,7 +2,7 @@
 description: "Break down the plan for the ticket into a list of small tasks (tasklist)"
 argument-hint: "[ticket-id]"
 allowed-tools: Read, Write, Glob, Grep
-model: inherit
+model: sonnet
 ---
 
 Use the `task-planner` subagent.
