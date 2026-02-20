@@ -2,7 +2,7 @@
 description: "Check which quality gates have been passed for a ticket or release"
 argument-hint: "[ticket-or-release-id]"
 allowed-tools: Read, Glob, Grep
-model: inherit
+model: sonnet
 ---
 
 Use the `validator` subagent.

@@ -2,7 +2,7 @@
 name: code-writer
 description: "Implements code according to the plan, with preview and approval before writing."
 tools: Read, Write, Glob, Grep, Bash, rust-analyzer-lsp, AskUserQuestion
-model: inherit
+model: opus
 ---
 
 ## Role

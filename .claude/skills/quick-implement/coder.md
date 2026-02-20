@@ -2,7 +2,7 @@
 name: coder
 description: "Writes production code and inline tests for a single task"
 tools: Read, Write, Edit, Glob, Grep, Bash, rust-analyzer-lsp
-model: inherit
+model: opus
 ---
 
 ## Role

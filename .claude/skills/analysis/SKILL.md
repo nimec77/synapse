@@ -2,7 +2,7 @@
 description: "Initialize feature: create a ticket and draft the PRD"
 argument-hint: "[ticket-id] [short-title] [description-file]"
 allowed-tools: Read, Write, Glob, Grep
-model: inherit
+model: opus
 ---
 
 ## Argument Parsing
