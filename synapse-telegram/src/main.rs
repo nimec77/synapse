@@ -17,25 +17,100 @@ use synapse_core::{
 };
 use teloxide::prelude::*;
 use tokio::sync::RwLock;
+use tracing_subscriber::prelude::*;
 use uuid::Uuid;
+
+/// Initialize the tracing subscriber.
+///
+/// When `config.logging` is `Some`, creates a layered subscriber with both
+/// stdout and rolling file output. When `None`, uses stdout-only (current behavior).
+///
+/// Returns the non-blocking writer guard that must be held for the process lifetime.
+fn init_tracing(
+    config: &Config,
+) -> anyhow::Result<Option<tracing_appender::non_blocking::WorkerGuard>> {
+    if let Some(ref lc) = config.logging {
+        // Attempt to create the log directory; fall back to stdout-only on failure.
+        if let Err(e) = std::fs::create_dir_all(&lc.directory) {
+            eprintln!(
+                "Warning: Failed to create log directory '{}': {}. Falling back to stdout-only.",
+                lc.directory, e
+            );
+            tracing_subscriber::fmt()
+                .with_env_filter(
+                    tracing_subscriber::EnvFilter::from_default_env()
+                        .add_directive("synapse_telegram=info".parse()?),
+                )
+                .init();
+            return Ok(None);
+        }
+
+        // Map rotation string to the tracing-appender rotation type.
+        let rotation = match lc.rotation.as_str() {
+            "daily" => tracing_appender::rolling::Rotation::DAILY,
+            "hourly" => tracing_appender::rolling::Rotation::HOURLY,
+            "never" => tracing_appender::rolling::Rotation::NEVER,
+            other => {
+                eprintln!(
+                    "Warning: Unknown rotation '{}', falling back to daily",
+                    other
+                );
+                tracing_appender::rolling::Rotation::DAILY
+            }
+        };
+
+        // Build the rolling file appender.
+        let file_appender = tracing_appender::rolling::RollingFileAppender::builder()
+            .rotation(rotation)
+            .filename_prefix("synapse-telegram")
+            .filename_suffix("log")
+            .max_log_files(lc.max_files)
+            .build(&lc.directory)
+            .context("Failed to create rolling file appender")?;
+
+        // Wrap in a non-blocking writer; guard must be kept alive for the process lifetime.
+        let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
+
+        let env_filter = tracing_subscriber::EnvFilter::from_default_env()
+            .add_directive("synapse_telegram=info".parse()?);
+
+        let stdout_layer = tracing_subscriber::fmt::layer();
+
+        let file_layer = tracing_subscriber::fmt::layer()
+            .with_writer(non_blocking)
+            .with_ansi(false);
+
+        tracing_subscriber::registry()
+            .with(env_filter)
+            .with(stdout_layer)
+            .with(file_layer)
+            .init();
+
+        Ok(Some(guard))
+    } else {
+        // No [logging] section — preserve current stdout-only behavior exactly.
+        tracing_subscriber::fmt()
+            .with_env_filter(
+                tracing_subscriber::EnvFilter::from_default_env()
+                    .add_directive("synapse_telegram=info".parse()?),
+            )
+            .init();
+        Ok(None)
+    }
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // 1. Initialize tracing with RUST_LOG support and a sensible default.
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive("synapse_telegram=info".parse()?),
-        )
-        .init();
-
-    tracing::info!("Starting Synapse Telegram Bot");
-
-    // 2. Load application configuration.
+    // 1. Load application configuration FIRST (tracing init depends on config).
     let config = Config::load().unwrap_or_else(|e| {
-        tracing::warn!("Failed to load config, using defaults: {}", e);
+        eprintln!("Warning: Failed to load config, using defaults: {}", e);
         Config::default()
     });
+
+    // 2. Initialize tracing (stdout-only or stdout+file based on config).
+    let _guard = init_tracing(&config)?;
+
+    tracing::info!("Starting Synapse Telegram Bot");
 
     // 3. Resolve bot token (env var > config file). Token is never logged.
     let token = resolve_bot_token(&config).context("Failed to obtain bot token")?;

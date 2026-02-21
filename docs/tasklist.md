@@ -28,7 +28,7 @@
 | 11. MCP Integration | ✅ Complete | 5/5 |
 | 12. Telegram Bot (SY-13) | ✅ Complete | 5/5 |
 | 13. System Prompt | ✅ Complete | 5/5 |
-| 14. File Logging | ⬜ Not Started | 0/5 |
+| 14. File Logging | ✅ Complete | 5/5 |
 
 **Legend:** ⬜ Not Started | 🔄 In Progress | ✅ Complete | ⏸️ Blocked
 
@@ -231,11 +231,11 @@
 
 **Goal:** Production-ready file-based logging with rotation for the Telegram bot.
 
-- [ ] 14.1 Add `LoggingConfig` struct to `synapse-core/src/config.rs` with defaults
-- [ ] 14.2 Add `tracing-appender` dependency and `registry` feature to `synapse-telegram`
-- [ ] 14.3 Rewrite tracing init with layered subscriber (stdout + file appender)
-- [ ] 14.4 Update `config.example.toml` with `[logging]` section documentation
-- [ ] 14.5 Update `docs/idea.md`, `docs/vision.md`, and `docs/tasklist.md`
+- [x] 14.1 Add `LoggingConfig` struct to `synapse-core/src/config.rs` with defaults
+- [x] 14.2 Add `tracing-appender` dependency and `registry` feature to `synapse-telegram`
+- [x] 14.3 Rewrite tracing init with layered subscriber (stdout + file appender)
+- [x] 14.4 Update `config.example.toml` with `[logging]` section documentation
+- [x] 14.5 Update `docs/idea.md`, `docs/vision.md`, and `docs/tasklist.md`
 
 **Test:** Add `[logging]` to config, start the bot, verify log files appear in the
 configured directory with correct rotation and file count limits.

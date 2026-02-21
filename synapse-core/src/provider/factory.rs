@@ -103,6 +103,7 @@ mod tests {
             session: None,
             mcp: None,
             telegram: None,
+            logging: None,
         }
     }
 
