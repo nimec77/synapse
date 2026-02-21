@@ -26,7 +26,7 @@
 | 9. CLI REPL (SY-10) | ✅ Complete | 4/4 |
 | 10. OpenAI Provider | ✅ Complete | 3/3 |
 | 11. MCP Integration | ✅ Complete | 5/5 |
-| 12. Telegram Bot | ⬜ Not Started | 0/4 |
+| 12. Telegram Bot | ⬜ Not Started | 0/5 |
 
 **Legend:** ⬜ Not Started | 🔄 In Progress | ✅ Complete | ⏸️ Blocked
 
@@ -197,8 +197,17 @@
 - [ ] 12.2 Create bot initialization with token from config
 - [ ] 12.3 Implement message handler using `synapse-core` agent
 - [ ] 12.4 Add session-per-chat persistence
+- [ ] 12.5 Add user authorization via `allowed_users` allowlist
 
-**Test:** Send message to bot, receive LLM response.
+**Test:** Send message to bot, receive LLM response. Messages from unlisted user IDs are silently dropped.
+
+**Implementation Notes:**
+- **Bot token resolution priority**:
+  1. `TELEGRAM_BOT_TOKEN` environment variable (highest priority)
+  2. `telegram.token` in config.toml
+- **`TelegramConfig`**: `token: Option<String>`, `allowed_users: Vec<u64>`
+- **Secure-by-default**: empty `allowed_users` rejects all users
+- **Silent drop**: unauthorized messages receive no reply
 
 ---
 
