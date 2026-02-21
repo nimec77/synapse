@@ -495,7 +495,13 @@ pub async fn run_repl(
     };
 
     // Create agent wrapping provider and MCP client
-    let agent = Agent::new(provider, mcp_client);
+    let agent = {
+        let a = Agent::new(provider, mcp_client);
+        match config.system_prompt {
+            Some(ref prompt) => a.with_system_prompt(prompt),
+            None => a,
+        }
+    };
 
     // Initialize app state
     let mut app = ReplApp::new(session.id, &config.provider, &config.model);

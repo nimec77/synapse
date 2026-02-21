@@ -98,6 +98,7 @@ mod tests {
             provider: provider.to_string(),
             model: "test-model".to_string(),
             api_key: api_key.map(|s| s.to_string()),
+            system_prompt: None,
             session: None,
             mcp: None,
             telegram: None,

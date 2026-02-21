@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **SY-14: System Prompt** - Global system prompt configuration wired through Agent to all provider calls:
+  - `system_prompt: Option<String>` field added to `Config` struct in `synapse-core/src/config.rs` with `#[serde(default)]`; fully backward-compatible — existing config files without the field default to `None`
+  - `system_prompt` private field and `with_system_prompt(prompt: impl Into<String>) -> Self` builder method added to `Agent` in `synapse-core/src/agent.rs`; `Agent::new()` signature unchanged
+  - `build_messages()` private helper on `Agent` prepends `Message::new(Role::System, prompt)` to a fresh `Vec<Message>` on every provider call; original messages slice is never mutated, ensuring system messages are never stored in the database
+  - Integration into `Agent::complete()`, `stream()`, and `stream_owned()`: system prompt is prepended on every iteration of the tool call loop and on every streaming call
+  - CLI one-shot (`synapse-cli/src/main.rs`) and REPL (`synapse-cli/src/repl.rs`) modes apply `with_system_prompt()` conditionally at agent construction when `config.system_prompt` is `Some`
+  - Telegram bot (`synapse-telegram/src/main.rs`) applies `with_system_prompt()` before wrapping in `Arc`, consistent with CLI behavior
+  - `config.example.toml` updated with commented-out `system_prompt` example and guidance to keep prompts concise to minimize token usage
+  - No provider changes needed: Anthropic, DeepSeek, OpenAI, and Mock providers already handled `Role::System` correctly
+  - No DB migrations: `system_prompt TEXT` column already existed on `sessions` table; prompt is injected at runtime, not persisted per-call
+  - 10 new unit tests (3 config + 7 agent); 231 total tests passing, zero regressions
+
 - **SY-13: Telegram Bot** - Second interface proving hexagonal architecture with session-per-chat persistence and user authorization:
   - `TelegramConfig` struct in `synapse-core/src/config.rs` with `token: Option<String>` and `allowed_users: Vec<u64>` fields; added as `pub telegram: Option<TelegramConfig>` to `Config` with `#[serde(default)]` (backward-compatible)
   - `synapse-telegram` crate brought from empty placeholder to fully functional Telegram bot using `teloxide` 0.13

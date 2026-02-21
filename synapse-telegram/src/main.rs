@@ -80,7 +80,14 @@ async fn main() -> anyhow::Result<()> {
     let mcp_client = init_mcp_client(mcp_path).await;
 
     // 8. Create Agent and wrap in Arc.
-    let agent = Arc::new(Agent::new(provider, mcp_client));
+    let agent = {
+        let a = Agent::new(provider, mcp_client);
+        match config.system_prompt {
+            Some(ref prompt) => a.with_system_prompt(prompt),
+            None => a,
+        }
+    };
+    let agent = Arc::new(agent);
 
     // 9. Rebuild chat-to-session map from persisted sessions.
     let initial_map = rebuild_chat_map(storage.as_ref().as_ref()).await;

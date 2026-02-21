@@ -20,6 +20,11 @@ provider = "deepseek"
 # OpenAI: gpt-4, gpt-4-turbo, gpt-3.5-turbo
 model = "deepseek-chat"
 
+# System prompt prepended to every LLM conversation.
+# This shapes the AI's personality and instructions across all interactions.
+# Keep it concise to minimize token usage.
+# system_prompt = "You are a helpful programming assistant."
+
 # Session storage configuration
 [session]
 # Database URL for session storage
