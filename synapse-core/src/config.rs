@@ -72,6 +72,10 @@ pub struct Config {
     /// Telegram bot configuration.
     #[serde(default)]
     pub telegram: Option<TelegramConfig>,
+
+    /// File logging configuration (rotation, directory, max files).
+    #[serde(default)]
+    pub logging: Option<LoggingConfig>,
 }
 
 /// Session storage configuration.
@@ -136,6 +140,48 @@ pub struct TelegramConfig {
     /// An empty list rejects all users (secure by default).
     #[serde(default)]
     pub allowed_users: Vec<u64>,
+}
+
+/// File-based logging configuration with rotation.
+///
+/// Deserialized from the `[logging]` section in `config.toml`.
+/// Omit the section entirely to disable file logging (stdout only).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct LoggingConfig {
+    /// Directory to write log files to (relative or absolute path).
+    #[serde(default = "default_log_directory")]
+    pub directory: String,
+
+    /// Maximum number of rotated log files to keep.
+    /// Oldest files are deleted when this limit is exceeded.
+    #[serde(default = "default_max_files")]
+    pub max_files: usize,
+
+    /// Rotation strategy: "daily", "hourly", or "never".
+    #[serde(default = "default_rotation")]
+    pub rotation: String,
+}
+
+fn default_log_directory() -> String {
+    "logs".to_string()
+}
+
+fn default_max_files() -> usize {
+    7
+}
+
+fn default_rotation() -> String {
+    "daily".to_string()
+}
+
+impl Default for LoggingConfig {
+    fn default() -> Self {
+        Self {
+            directory: default_log_directory(),
+            max_files: default_max_files(),
+            rotation: default_rotation(),
+        }
+    }
 }
 
 fn default_provider() -> String {
@@ -245,6 +291,7 @@ impl Default for Config {
             session: None,
             mcp: None,
             telegram: None,
+            logging: None,
         }
     }
 }
@@ -537,8 +584,10 @@ token = "bot-token-only"
         writeln!(file, "You are a helpful assistant.").unwrap();
         drop(file);
 
-        let mut config = Config::default();
-        config.system_prompt_file = Some(path.to_str().unwrap().to_string());
+        let mut config = Config {
+            system_prompt_file: Some(path.to_str().unwrap().to_string()),
+            ..Config::default()
+        };
         config.resolve_system_prompt().unwrap();
 
         assert_eq!(
@@ -557,9 +606,11 @@ token = "bot-token-only"
         writeln!(file, "From file.").unwrap();
         drop(file);
 
-        let mut config = Config::default();
-        config.system_prompt = Some("Inline wins.".to_string());
-        config.system_prompt_file = Some(path.to_str().unwrap().to_string());
+        let mut config = Config {
+            system_prompt: Some("Inline wins.".to_string()),
+            system_prompt_file: Some(path.to_str().unwrap().to_string()),
+            ..Config::default()
+        };
         config.resolve_system_prompt().unwrap();
 
         assert_eq!(config.system_prompt, Some("Inline wins.".to_string()));
@@ -568,8 +619,10 @@ token = "bot-token-only"
 
     #[test]
     fn test_resolve_system_prompt_file_not_found() {
-        let mut config = Config::default();
-        config.system_prompt_file = Some("/nonexistent/path/prompt.md".to_string());
+        let mut config = Config {
+            system_prompt_file: Some("/nonexistent/path/prompt.md".to_string()),
+            ..Config::default()
+        };
         let result = config.resolve_system_prompt();
         assert!(matches!(result, Err(ConfigError::IoError { .. })));
     }
@@ -590,12 +643,77 @@ token = "bot-token-only"
         write!(file, "   \n\t\n  ").unwrap();
         drop(file);
 
-        let mut config = Config::default();
-        config.system_prompt_file = Some(path.to_str().unwrap().to_string());
+        let mut config = Config {
+            system_prompt_file: Some(path.to_str().unwrap().to_string()),
+            ..Config::default()
+        };
         config.resolve_system_prompt().unwrap();
 
         assert_eq!(config.system_prompt, None);
         std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn test_logging_config_defaults() {
+        let lc = LoggingConfig::default();
+        assert_eq!(lc.directory, "logs");
+        assert_eq!(lc.max_files, 7);
+        assert_eq!(lc.rotation, "daily");
+    }
+
+    #[test]
+    fn test_config_without_logging_section() {
+        let toml = r#"
+provider = "deepseek"
+model = "deepseek-chat"
+"#;
+        let config: Config = toml::from_str(toml).unwrap();
+        assert!(config.logging.is_none());
+    }
+
+    #[test]
+    fn test_config_with_logging_section() {
+        let toml = r#"
+provider = "deepseek"
+
+[logging]
+directory = "/var/log/synapse"
+max_files = 30
+rotation = "hourly"
+"#;
+        let config: Config = toml::from_str(toml).unwrap();
+        assert!(config.logging.is_some());
+        let lc = config.logging.unwrap();
+        assert_eq!(lc.directory, "/var/log/synapse");
+        assert_eq!(lc.max_files, 30);
+        assert_eq!(lc.rotation, "hourly");
+    }
+
+    #[test]
+    fn test_config_with_logging_section_partial_defaults() {
+        let toml = r#"
+[logging]
+directory = "/tmp/logs"
+"#;
+        let config: Config = toml::from_str(toml).unwrap();
+        assert!(config.logging.is_some());
+        let lc = config.logging.unwrap();
+        assert_eq!(lc.directory, "/tmp/logs");
+        assert_eq!(lc.max_files, 7); // default
+        assert_eq!(lc.rotation, "daily"); // default
+    }
+
+    #[test]
+    fn test_config_with_empty_logging_section() {
+        let toml = r#"
+[logging]
+"#;
+        let config: Config = toml::from_str(toml).unwrap();
+        assert!(config.logging.is_some());
+        let lc = config.logging.unwrap();
+        assert_eq!(lc.directory, "logs"); // default
+        assert_eq!(lc.max_files, 7); // default
+        assert_eq!(lc.rotation, "daily"); // default
     }
 
     #[test]
@@ -607,8 +725,10 @@ token = "bot-token-only"
         write!(file, "\n  You are a coding assistant.  \n\n").unwrap();
         drop(file);
 
-        let mut config = Config::default();
-        config.system_prompt_file = Some(path.to_str().unwrap().to_string());
+        let mut config = Config {
+            system_prompt_file: Some(path.to_str().unwrap().to_string()),
+            ..Config::default()
+        };
         config.resolve_system_prompt().unwrap();
 
         assert_eq!(

@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **SY-15: File Logging** - File-based logging with automatic rotation for the Telegram bot:
+  - `LoggingConfig` struct added to `synapse-core/src/config.rs` with three serde-defaulted fields: `directory: String` (default `"logs"`), `max_files: usize` (default `7`), `rotation: String` (default `"daily"`)
+  - `logging: Option<LoggingConfig>` field added to `Config` with `#[serde(default)]`; omitting the `[logging]` section preserves existing stdout-only behavior (fully backward compatible)
+  - `LoggingConfig` re-exported from `synapse-core/src/lib.rs` alongside existing config types
+  - `tracing-appender = "0.2"` added to `synapse-telegram`; `"registry"` feature enabled on `tracing-subscriber` to support layered subscribers
+  - `init_tracing(config: &Config) -> anyhow::Result<Option<WorkerGuard>>` helper in `synapse-telegram/src/main.rs`: stdout-only path when `logging` is `None`; stdout + rolling file path when `Some`, using `RollingFileAppender::builder()` with `.filename_prefix("synapse-telegram")` and `.max_log_files()`
+  - Config loading moved before tracing initialization in `main()` so `config.logging` is available during setup
+  - Non-blocking writer guard (`WorkerGuard`) stored as `let _guard` in `main()` before the dispatcher loop, guaranteeing all buffered log writes are flushed on shutdown
+  - Directory creation failure falls back to stdout-only with a stderr warning; unknown `rotation` values fall back to `"daily"` with a warning
+  - File `fmt` layer uses `.with_ansi(false)` to suppress ANSI escape codes in log files
+  - `system_prompt_file: Option<String>` field added to `Config`: loads system prompt from an external file during `Config::load_from()`; inline `system_prompt` takes priority; whitespace-only file contents treated as absent
+  - `config.example.toml` updated with documented `[logging]` section and `system_prompt_file` field
+  - `synapse-cli` completely unaffected — stdout only, no changes
+  - 13 new unit tests (5 for `LoggingConfig` parsing/defaults, 8 for `system_prompt_file` resolution); 244 total tests passing, zero regressions
+
 - **SY-14: System Prompt** - Global system prompt configuration wired through Agent to all provider calls:
   - `system_prompt: Option<String>` field added to `Config` struct in `synapse-core/src/config.rs` with `#[serde(default)]`; fully backward-compatible — existing config files without the field default to `None`
   - `system_prompt` private field and `with_system_prompt(prompt: impl Into<String>) -> Self` builder method added to `Agent` in `synapse-core/src/agent.rs`; `Agent::new()` signature unchanged

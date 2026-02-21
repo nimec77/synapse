@@ -114,7 +114,7 @@ Priority (highest first):
 2. `./config.toml` (local directory)
 3. `~/.config/synapse/config.toml` (user default)
 
-`Config` top-level fields: `provider`, `api_key`, `model`, `system_prompt: Option<String>` (injected on-the-fly, never stored in DB), `session`, `mcp`, `telegram`. `TelegramConfig` lives in `synapse-core/src/config.rs`. Bot token resolution: `TELEGRAM_BOT_TOKEN` env var > `telegram.token` in config. Empty `allowed_users` rejects all users (secure by default).
+`Config` top-level fields: `provider`, `api_key`, `model`, `system_prompt: Option<String>` (injected on-the-fly, never stored in DB), `system_prompt_file: Option<String>` (path to external prompt file; inline `system_prompt` wins if both set), `session`, `mcp`, `telegram`, `logging: Option<LoggingConfig>`. `TelegramConfig` lives in `synapse-core/src/config.rs`. Bot token resolution: `TELEGRAM_BOT_TOKEN` env var > `telegram.token` in config. Empty `allowed_users` rejects all users (secure by default). `LoggingConfig` fields: `directory` (default `"logs"`), `max_files` (default `7`), `rotation` (`"daily"` / `"hourly"` / `"never"`, default `"daily"`); omitting `[logging]` keeps stdout-only behavior.
 
 ### Storage
 
@@ -177,6 +177,7 @@ GitHub Actions on push to `master`/`feature/*` and PRs to `master`:
 - **CLI**: `clap` for args, `ratatui` + `crossterm` for REPL UI
 - **MCP**: `rmcp` for Model Context Protocol
 - **Telegram**: `teloxide` 0.13 with `macros` feature, dptree dependency injection
+- **File Logging**: `tracing-appender` 0.2 with non-blocking writer and rolling rotation (Telegram only)
 - **IDs**: `uuid` v4/v7
 
 ## Documentation
@@ -225,3 +226,4 @@ Ticket artifacts live in: `docs/prd/`, `docs/research/`, `docs/plan/`, `docs/tas
 | SY-11 | MCP Integration | Agent struct with tool call loop, MCP client via rmcp, tool discovery |
 | SY-13 | Telegram Bot | teloxide bot, session-per-chat persistence, user allowlist auth, TelegramConfig |
 | SY-14 | System Prompt | `system_prompt` in Config and Agent, `build_messages()` on-the-fly injection |
+| SY-15 | File Logging | `LoggingConfig` in core, `tracing-appender` layered subscriber in Telegram bot |
