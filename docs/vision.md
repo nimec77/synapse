@@ -688,3 +688,21 @@ This architecture provides:
 - **Production-ready patterns**: Proper logging, configuration, and security
 
 The project structure supports incremental development: start with CLI + one provider, then add more providers, then Telegram, then MCP.
+
+---
+
+## Roadmap / Upcoming Work
+
+### Phase 15: Code Refactoring (planned)
+
+A focused internal quality pass following the Phase 14 feature milestone. No external behaviour changes — exclusively improving structure, eliminating duplication, and hardening the public API:
+
+| Task | Description |
+|------|-------------|
+| 15.1 Dead code removal | Drop vestigial `placeholder` module; prune unused `StreamEvent` variants |
+| 15.2 OpenAI-compat base | Merge ~400 lines of duplicated serde types and HTTP logic from `deepseek.rs` / `openai.rs` into a shared `provider/openai_compat.rs` |
+| 15.3 Magic string constants | `Role::as_str()`, `Role::from_str()`, named constants for SSE markers, env-var names, error messages |
+| 15.4 Structured tracing | Add `tracing` instrumentation to core (agent loop, providers, storage, MCP); replace bare `eprintln!` calls |
+| 15.5 Shared utilities | Consolidate `init_mcp_client()` and `Agent::from_config()` into core (currently duplicated across CLI and Telegram) |
+| 15.6 File splitting | Break `repl.rs` (678 lines) into `repl/{app,render,input}.rs`; extract `commands.rs` from CLI `main.rs` |
+| 15.7 API surface + async hygiene | Narrow `lib.rs` re-exports; replace blocking `std::fs::create_dir_all` with `tokio::fs` in `sqlite.rs` |
