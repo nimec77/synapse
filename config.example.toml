@@ -66,3 +66,15 @@ auto_cleanup = true
 # An empty list (or omitting this field) rejects ALL users (secure by default).
 # To find your Telegram user ID, message @userinfobot on Telegram.
 # allowed_users = [123456789, 987654321]
+
+# Logging configuration (file-based output with rotation)
+# Omit this section entirely to disable file logging (stdout only).
+# [logging]
+# Directory to write log files to (relative or absolute path)
+# directory = "logs"
+#
+# Maximum number of rotated log files to keep (oldest deleted when exceeded)
+# max_files = 7
+#
+# Rotation strategy: "daily", "hourly", or "never"
+# rotation = "daily"

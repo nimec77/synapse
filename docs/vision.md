@@ -28,7 +28,7 @@ Rather than using existing libraries (rig, genai, async-openai), the LLM provide
 | CLI UI | `ratatui` + `crossterm` | Interactive REPL with rich display |
 | Database | `sqlx` | Session persistence (supports SQLite, PostgreSQL, MySQL) |
 | Error Handling | `thiserror`, `anyhow` | Library and application errors |
-| Logging | `tracing`, `tracing-subscriber` | Structured logging |
+| Logging | `tracing`, `tracing-subscriber`, `tracing-appender` | Structured logging with file rotation |
 | Telegram | `teloxide` | Telegram bot interface |
 | MCP | `rmcp` | Model Context Protocol support |
 | Testing | `tokio-test`, `mockall` | Async testing and mocking |
@@ -565,6 +565,14 @@ pub async fn chat(&self, session_id: Uuid, message: &str) -> Result<...> {
 - Log errors with full context (session ID, provider, model)
 - Stderr for CLI errors with user-friendly messages
 - Structured JSON logs available via `SYNAPSE_LOG_FORMAT=json`
+
+### File Logging (Telegram Bot)
+
+When deployed on a VPS, the Telegram bot supports file-based logging with rotation
+via the `[logging]` section in `config.toml`. Uses `tracing-appender` with a
+non-blocking writer. Files follow the naming pattern
+`synapse-telegram.YYYY-MM-DD.log` (daily rotation). Old files are automatically
+deleted when `max_files` is exceeded.
 
 ---
 
