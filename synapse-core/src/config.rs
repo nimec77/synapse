@@ -53,6 +53,14 @@ pub struct Config {
     #[serde(default)]
     pub system_prompt: Option<String>,
 
+    /// Path to a file whose contents become the system prompt.
+    ///
+    /// Useful for long prompts (Markdown, structured instructions, etc.) that are
+    /// impractical as inline TOML strings. Resolved during [`Config::load_from`].
+    /// If both `system_prompt` and `system_prompt_file` are set, the inline value wins.
+    #[serde(default)]
+    pub system_prompt_file: Option<String>,
+
     /// Session storage configuration.
     #[serde(default)]
     pub session: Option<SessionConfig>,
@@ -193,10 +201,36 @@ impl Config {
             path: path.to_path_buf(),
             source,
         })?;
-        toml::from_str(&content).map_err(|source| ConfigError::ParseError {
-            path: path.to_path_buf(),
-            source,
-        })
+        let mut config: Config =
+            toml::from_str(&content).map_err(|source| ConfigError::ParseError {
+                path: path.to_path_buf(),
+                source,
+            })?;
+        config.resolve_system_prompt()?;
+        Ok(config)
+    }
+
+    /// Resolve `system_prompt` from `system_prompt_file` if not already set inline.
+    ///
+    /// Priority: inline `system_prompt` wins over `system_prompt_file`.
+    /// Whitespace-only file contents leave `system_prompt` as `None`.
+    fn resolve_system_prompt(&mut self) -> Result<(), ConfigError> {
+        if self.system_prompt.is_some() {
+            return Ok(());
+        }
+        if let Some(ref path_str) = self.system_prompt_file {
+            let path = PathBuf::from(path_str);
+            let content =
+                std::fs::read_to_string(&path).map_err(|source| ConfigError::IoError {
+                    path: path.clone(),
+                    source,
+                })?;
+            let trimmed = content.trim();
+            if !trimmed.is_empty() {
+                self.system_prompt = Some(trimmed.to_string());
+            }
+        }
+        Ok(())
     }
 }
 
@@ -207,6 +241,7 @@ impl Default for Config {
             api_key: None,
             model: default_model(),
             system_prompt: None,
+            system_prompt_file: None,
             session: None,
             mcp: None,
             telegram: None,
@@ -480,5 +515,106 @@ token = "bot-token-only"
     fn test_config_default_system_prompt() {
         let config = Config::default();
         assert_eq!(config.system_prompt, None);
+    }
+
+    #[test]
+    fn test_parse_system_prompt_file_field() {
+        let toml = r#"system_prompt_file = "prompts/system.md""#;
+        let config: Config = toml::from_str(toml).unwrap();
+        assert_eq!(
+            config.system_prompt_file,
+            Some("prompts/system.md".to_string())
+        );
+        assert_eq!(config.system_prompt, None);
+    }
+
+    #[test]
+    fn test_resolve_system_prompt_from_file() {
+        use std::io::Write;
+        let dir = std::env::temp_dir();
+        let path = dir.join("synapse_test_system_prompt.md");
+        let mut file = std::fs::File::create(&path).unwrap();
+        writeln!(file, "You are a helpful assistant.").unwrap();
+        drop(file);
+
+        let mut config = Config::default();
+        config.system_prompt_file = Some(path.to_str().unwrap().to_string());
+        config.resolve_system_prompt().unwrap();
+
+        assert_eq!(
+            config.system_prompt,
+            Some("You are a helpful assistant.".to_string())
+        );
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn test_resolve_system_prompt_inline_takes_priority() {
+        use std::io::Write;
+        let dir = std::env::temp_dir();
+        let path = dir.join("synapse_test_system_prompt_priority.md");
+        let mut file = std::fs::File::create(&path).unwrap();
+        writeln!(file, "From file.").unwrap();
+        drop(file);
+
+        let mut config = Config::default();
+        config.system_prompt = Some("Inline wins.".to_string());
+        config.system_prompt_file = Some(path.to_str().unwrap().to_string());
+        config.resolve_system_prompt().unwrap();
+
+        assert_eq!(config.system_prompt, Some("Inline wins.".to_string()));
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn test_resolve_system_prompt_file_not_found() {
+        let mut config = Config::default();
+        config.system_prompt_file = Some("/nonexistent/path/prompt.md".to_string());
+        let result = config.resolve_system_prompt();
+        assert!(matches!(result, Err(ConfigError::IoError { .. })));
+    }
+
+    #[test]
+    fn test_resolve_system_prompt_neither_set() {
+        let mut config = Config::default();
+        config.resolve_system_prompt().unwrap();
+        assert_eq!(config.system_prompt, None);
+    }
+
+    #[test]
+    fn test_resolve_system_prompt_empty_file() {
+        use std::io::Write;
+        let dir = std::env::temp_dir();
+        let path = dir.join("synapse_test_empty_prompt.md");
+        let mut file = std::fs::File::create(&path).unwrap();
+        write!(file, "   \n\t\n  ").unwrap();
+        drop(file);
+
+        let mut config = Config::default();
+        config.system_prompt_file = Some(path.to_str().unwrap().to_string());
+        config.resolve_system_prompt().unwrap();
+
+        assert_eq!(config.system_prompt, None);
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn test_resolve_system_prompt_trims_whitespace() {
+        use std::io::Write;
+        let dir = std::env::temp_dir();
+        let path = dir.join("synapse_test_whitespace_prompt.md");
+        let mut file = std::fs::File::create(&path).unwrap();
+        write!(file, "\n  You are a coding assistant.  \n\n").unwrap();
+        drop(file);
+
+        let mut config = Config::default();
+        config.system_prompt_file = Some(path.to_str().unwrap().to_string());
+        config.resolve_system_prompt().unwrap();
+
+        assert_eq!(
+            config.system_prompt,
+            Some("You are a coding assistant.".to_string())
+        );
+        std::fs::remove_file(&path).ok();
     }
 }

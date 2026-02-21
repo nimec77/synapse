@@ -99,6 +99,7 @@ mod tests {
             model: "test-model".to_string(),
             api_key: api_key.map(|s| s.to_string()),
             system_prompt: None,
+            system_prompt_file: None,
             session: None,
             mcp: None,
             telegram: None,
