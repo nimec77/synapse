@@ -36,8 +36,8 @@ synapse-cli / synapse-telegram      ← Interface binaries (use anyhow for error
         │
    ┌────┼────────────┐
    ▼    ▼            ▼
-LlmProvider  SessionStore   (future: McpClient)
- (trait)      (trait)
+LlmProvider  SessionStore   McpClient
+ (trait)      (trait)        (rmcp)
    │            │
    ▼            ▼
 Anthropic    SqliteStore
@@ -96,6 +96,8 @@ Priority (highest first):
 2. `./config.toml` (local directory)
 3. `~/.config/synapse/config.toml` (user default)
 
+`TelegramConfig` lives in `synapse-core/src/config.rs` as `pub telegram: Option<TelegramConfig>` on `Config`. Bot token resolution: `TELEGRAM_BOT_TOKEN` env var > `telegram.token` in config. Empty `allowed_users` rejects all users (secure by default).
+
 ### Storage
 
 SQLite via `sqlx` with WAL mode, connection pooling (max 5), automatic migrations. Database URL priority: `$DATABASE_URL` > `session.database_url` in config > default `sqlite:~/.config/synapse/sessions.db`. Uses UUID v7 (time-sortable) and RFC3339 timestamps. `create_storage(config) -> Box<dyn SessionStore>` factory in `storage/sqlite.rs`.
@@ -138,7 +140,7 @@ src/
 |-------|---------|
 | `synapse-core` | Core library: config, providers, storage, message types |
 | `synapse-cli` | CLI binary: one-shot, stdin, and session modes via `clap` |
-| `synapse-telegram` | Telegram bot interface (placeholder) |
+| `synapse-telegram` | Telegram bot interface: teloxide long-polling, session-per-chat, user allowlist |
 
 ## CI/CD
 
@@ -154,7 +156,8 @@ GitHub Actions on push to `master`/`feature/*` and PRs to `master`:
 - **SSE**: `eventsource-stream` + `async-stream`
 - **Database**: `sqlx` with `runtime-tokio` + `sqlite` features
 - **CLI**: `clap` for args, `ratatui` + `crossterm` for REPL UI
-- **MCP**: `rmcp` for Model Context Protocol (future)
+- **MCP**: `rmcp` for Model Context Protocol
+- **Telegram**: `teloxide` 0.13 with `macros` feature, dptree dependency injection
 - **IDs**: `uuid` v4/v7
 
 ## Documentation
@@ -162,7 +165,7 @@ GitHub Actions on push to `master`/`feature/*` and PRs to `master`:
 Essential docs to read before working:
 1. `docs/.active_ticket` — current ticket ID
 2. `docs/prd/<ticket>.prd.md` — requirements for current feature
-3. `docs/tasklist.md` — development plan with progress tracking
+3. `docs/tasklist/<ticket>.md` — task breakdown with progress tracking
 4. `docs/vision.md` — full technical architecture
 5. `docs/conventions.md` — code rules (DO and DON'T)
 6. `docs/workflow.md` — step-by-step collaboration process with quality gates
@@ -200,3 +203,5 @@ Ticket artifacts live in: `docs/prd/`, `docs/research/`, `docs/plan/`, `docs/tas
 | SY-8 | Streaming Responses | Token-by-token streaming via SSE, DeepSeekProvider streaming, Ctrl+C handling |
 | SY-9 | Session Storage | SQLite persistence, SessionStore trait, session commands, auto-cleanup |
 | SY-10 | CLI REPL | Interactive TUI with ratatui/crossterm, multi-turn conversations, streaming, session resume |
+| SY-11 | MCP Integration | Agent orchestration layer, MCP client via rmcp, tool call loop in provider |
+| SY-13 | Telegram Bot | teloxide bot, session-per-chat persistence, user allowlist auth, TelegramConfig |

@@ -8,4 +8,15 @@ name = "synapse-telegram"
 path = "src/main.rs"
 
 [dependencies]
-# No dependencies for Phase 1
+synapse-core = { path = "../synapse-core" }
+teloxide = { version = "0.13", features = ["macros"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+anyhow = "1"
+futures = "0.3"
+uuid = { version = "1", features = ["v4", "v7"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+async-trait = "0.1"
+
+[dev-dependencies]
+chrono = "0.4"

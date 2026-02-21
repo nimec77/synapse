@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **SY-13: Telegram Bot** - Second interface proving hexagonal architecture with session-per-chat persistence and user authorization:
+  - `TelegramConfig` struct in `synapse-core/src/config.rs` with `token: Option<String>` and `allowed_users: Vec<u64>` fields; added as `pub telegram: Option<TelegramConfig>` to `Config` with `#[serde(default)]` (backward-compatible)
+  - `synapse-telegram` crate brought from empty placeholder to fully functional Telegram bot using `teloxide` 0.13
+  - Bot token resolution: `TELEGRAM_BOT_TOKEN` env var > `telegram.token` in config; token never logged at any level
+  - User authorization via `is_authorized()` helper: checks message sender against `allowed_users`; empty list rejects all (secure by default); unauthorized messages silently dropped
+  - Session-per-chat persistence: each Telegram chat ID mapped to a unique SQLite session named `"tg:<chat_id>"`; in-memory `ChatSessionMap` (`Arc<RwLock<HashMap<i64, Uuid>>>`) rebuilt from `list_sessions()` on startup
+  - `resolve_session()` with read-lock fast path and write-lock double-check for race-safe session creation
+  - `rebuild_chat_map()` reconstructs routing map from existing sessions on bot restart
+  - `chunk_message()` splits responses at paragraph / newline / space boundaries for Telegram's 4096-character message limit
+  - `handle_message()` endpoint using `dptree` dependency injection: authorization → session → history → typing indicator → `agent.complete()` → store → send
+  - Typing indicator (`ChatAction::Typing`) sent before LLM invocation
+  - Agent errors logged via `tracing::error!`; generic user-friendly message sent on failure
+  - Graceful shutdown via `Arc::try_unwrap(agent)` after Dispatcher stops; Ctrl+C handled via `enable_ctrlc_handler()`
+  - `config.example.toml` updated with commented-out `[telegram]` section and usage instructions
+  - 17 new unit tests: TelegramConfig parsing (4), user authorization (3), token resolution (4), chat map reconstruction (3), message chunking (3)
+  - Zero core abstractions added for Telegram; entire implementation uses existing `Agent::complete()`, `SessionStore`, `Config`, and provider/MCP APIs — hexagonal architecture validated
+  - Dependencies: `teloxide` 0.13 (macros), `tracing-subscriber` (env-filter), `async-trait`
+
 - **SY-12: MCP Integration** - Tool calling via Model Context Protocol with agent orchestration:
   - MCP client infrastructure using `rmcp` crate with `TokioChildProcess` transport for stdio-based MCP servers
   - `McpConfig` / `McpServerConfig` types parsing standard `mcp_servers.json` format (compatible with Claude Desktop / Windsurf)

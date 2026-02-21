@@ -52,6 +52,10 @@ pub struct Config {
     /// MCP (Model Context Protocol) configuration.
     #[serde(default)]
     pub mcp: Option<McpSettings>,
+
+    /// Telegram bot configuration.
+    #[serde(default)]
+    pub telegram: Option<TelegramConfig>,
 }
 
 /// Session storage configuration.
@@ -102,6 +106,20 @@ pub struct McpSettings {
     /// 3. Default: `~/.config/synapse/mcp_servers.json`
     #[serde(default)]
     pub config_path: Option<String>,
+}
+
+/// Telegram bot configuration.
+///
+/// Secure by default: an empty `allowed_users` list rejects all users.
+#[derive(Debug, Clone, PartialEq, Deserialize, Default)]
+pub struct TelegramConfig {
+    /// Bot token. Overridden by the `TELEGRAM_BOT_TOKEN` environment variable.
+    #[serde(default)]
+    pub token: Option<String>,
+    /// Telegram user IDs allowed to interact with the bot.
+    /// An empty list rejects all users (secure by default).
+    #[serde(default)]
+    pub allowed_users: Vec<u64>,
 }
 
 fn default_provider() -> String {
@@ -182,6 +200,7 @@ impl Default for Config {
             model: default_model(),
             session: None,
             mcp: None,
+            telegram: None,
         }
     }
 }
@@ -387,5 +406,50 @@ config_path = "/custom/path/mcp_servers.json"
         let config: Config = toml::from_str(toml).unwrap();
         assert!(config.mcp.is_some());
         assert!(config.mcp.unwrap().config_path.is_none());
+    }
+
+    #[test]
+    fn test_config_without_telegram_section() {
+        let toml = r#"
+provider = "deepseek"
+model = "deepseek-chat"
+"#;
+        let config: Config = toml::from_str(toml).unwrap();
+        assert!(config.telegram.is_none());
+    }
+
+    #[test]
+    fn test_config_with_telegram_section() {
+        let toml = r#"
+provider = "deepseek"
+
+[telegram]
+token = "123456:ABC-DEF"
+allowed_users = [123456789, 987654321]
+"#;
+        let config: Config = toml::from_str(toml).unwrap();
+        assert!(config.telegram.is_some());
+        let tg = config.telegram.unwrap();
+        assert_eq!(tg.token, Some("123456:ABC-DEF".to_string()));
+        assert_eq!(tg.allowed_users, vec![123456789u64, 987654321u64]);
+    }
+
+    #[test]
+    fn test_config_telegram_partial_defaults() {
+        let toml = r#"
+[telegram]
+token = "bot-token-only"
+"#;
+        let config: Config = toml::from_str(toml).unwrap();
+        let tg = config.telegram.unwrap();
+        assert_eq!(tg.token, Some("bot-token-only".to_string()));
+        assert!(tg.allowed_users.is_empty());
+    }
+
+    #[test]
+    fn test_telegram_config_default() {
+        let tg = TelegramConfig::default();
+        assert!(tg.token.is_none());
+        assert!(tg.allowed_users.is_empty());
     }
 }

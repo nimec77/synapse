@@ -4,11 +4,11 @@
 
 ## Tasks
 
-- [ ] 12.1 Add `teloxide` to `synapse-telegram`
-- [ ] 12.2 Create bot initialization with token from config
-- [ ] 12.3 Implement message handler using `synapse-core` agent
-- [ ] 12.4 Add session-per-chat persistence
-- [ ] 12.5 Add user authorization via `allowed_users` allowlist
+- [x] 12.1 Add `teloxide` to `synapse-telegram`
+- [x] 12.2 Create bot initialization with token from config
+- [x] 12.3 Implement message handler using `synapse-core` agent
+- [x] 12.4 Add session-per-chat persistence
+- [x] 12.5 Add user authorization via `allowed_users` allowlist
 
 ## Acceptance Criteria
 
