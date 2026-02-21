@@ -1,5 +1,420 @@
-//! Synapse Telegram Bot - Telegram interface for the Synapse AI agent.
+//! Synapse Telegram Bot — Telegram interface for the Synapse AI agent.
+//!
+//! Connects the Telegram Bot API to `synapse-core`, sharing the same Agent,
+//! SessionStore, and MCP subsystems as the CLI interface. Validates the
+//! hexagonal architecture by proving a second frontend can reuse all core logic.
 
-fn main() {
-    println!("Synapse Telegram Bot");
+mod handlers;
+
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use anyhow::Context;
+use handlers::ChatSessionMap;
+use synapse_core::{
+    Agent, Config, McpClient, SessionStore, SessionSummary, create_provider, create_storage,
+    load_mcp_config,
+};
+use teloxide::prelude::*;
+use tokio::sync::RwLock;
+use uuid::Uuid;
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    // 1. Initialize tracing with RUST_LOG support and a sensible default.
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::from_default_env()
+                .add_directive("synapse_telegram=info".parse()?),
+        )
+        .init();
+
+    tracing::info!("Starting Synapse Telegram Bot");
+
+    // 2. Load application configuration.
+    let config = Config::load().unwrap_or_else(|e| {
+        tracing::warn!("Failed to load config, using defaults: {}", e);
+        Config::default()
+    });
+
+    // 3. Resolve bot token (env var > config file). Token is never logged.
+    let token = resolve_bot_token(&config).context("Failed to obtain bot token")?;
+
+    // 4. Create the teloxide Bot instance.
+    let bot = Bot::new(token);
+
+    // 5. Create storage and run auto-cleanup.
+    let db_url = config
+        .session
+        .as_ref()
+        .and_then(|s| s.database_url.as_deref());
+
+    let storage: Arc<Box<dyn SessionStore>> = Arc::new(
+        create_storage(db_url)
+            .await
+            .context("Failed to initialize session storage")?,
+    );
+
+    if config
+        .session
+        .as_ref()
+        .map(|s| s.auto_cleanup)
+        .unwrap_or(true)
+    {
+        let session_config = config.session.clone().unwrap_or_default();
+        match storage.cleanup(&session_config).await {
+            Ok(result) => {
+                if result.sessions_deleted > 0 {
+                    tracing::info!("Cleaned up {} old sessions", result.sessions_deleted);
+                }
+            }
+            Err(e) => tracing::warn!("Session cleanup failed: {}", e),
+        }
+    }
+
+    // 6. Create LLM provider.
+    let provider = create_provider(&config).context("Failed to create LLM provider")?;
+
+    // 7. Initialize MCP client.
+    let mcp_path = config.mcp.as_ref().and_then(|m| m.config_path.as_deref());
+    let mcp_client = init_mcp_client(mcp_path).await;
+
+    // 8. Create Agent and wrap in Arc.
+    let agent = Arc::new(Agent::new(provider, mcp_client));
+
+    // 9. Rebuild chat-to-session map from persisted sessions.
+    let initial_map = rebuild_chat_map(storage.as_ref().as_ref()).await;
+    tracing::info!(
+        "Restored {} Telegram sessions from storage",
+        initial_map.len()
+    );
+    let chat_map: ChatSessionMap = Arc::new(RwLock::new(initial_map));
+
+    // 10. Wrap shared config in Arc for handler injection.
+    let config = Arc::new(config);
+
+    // 11. Set up message handler and Dispatcher with dependency injection.
+    let handler = Update::filter_message().endpoint(handlers::handle_message);
+
+    tracing::info!("Dispatcher ready — polling for updates");
+
+    Dispatcher::builder(bot, handler)
+        .dependencies(dptree::deps![
+            Arc::clone(&config),
+            Arc::clone(&agent),
+            Arc::clone(&storage),
+            chat_map
+        ])
+        .enable_ctrlc_handler()
+        .build()
+        .dispatch()
+        .await;
+
+    // 12. Graceful shutdown: release MCP connections if possible.
+    tracing::info!("Dispatcher stopped — shutting down");
+    if let Ok(a) = Arc::try_unwrap(agent) {
+        a.shutdown().await;
+        tracing::info!("Agent shutdown complete");
+    } else {
+        tracing::warn!("Could not unwrap Agent for graceful shutdown — connections will drop");
+    }
+
+    Ok(())
+}
+
+/// Initialize MCP client from config path, returning `None` on any error.
+async fn init_mcp_client(config_path: Option<&str>) -> Option<McpClient> {
+    match load_mcp_config(config_path) {
+        Ok(Some(cfg)) => match McpClient::new(&cfg).await {
+            Ok(client) if client.has_tools() => Some(client),
+            Ok(_) => None,
+            Err(e) => {
+                tracing::warn!("MCP initialization failed: {}", e);
+                None
+            }
+        },
+        Ok(None) => None,
+        Err(e) => {
+            tracing::warn!("MCP config error: {}", e);
+            None
+        }
+    }
+}
+
+/// Resolve the bot token with the following priority:
+///
+/// 1. `TELEGRAM_BOT_TOKEN` environment variable (if set and non-empty).
+/// 2. `telegram.token` in `config.toml`.
+///
+/// The token is **never** passed to any tracing macro.
+///
+/// # Errors
+///
+/// Returns an error if neither source provides a token.
+pub fn resolve_bot_token(config: &Config) -> anyhow::Result<String> {
+    if let Ok(token) = std::env::var("TELEGRAM_BOT_TOKEN")
+        && !token.is_empty()
+    {
+        return Ok(token);
+    }
+    config
+        .telegram
+        .as_ref()
+        .and_then(|t| t.token.clone())
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "Bot token required: set TELEGRAM_BOT_TOKEN env var or telegram.token in config"
+            )
+        })
+}
+
+/// Rebuild the in-memory chat-ID-to-session-UUID map from persisted sessions.
+///
+/// Sessions created by this bot follow the naming convention `"tg:<chat_id>"`.
+/// Any session without this prefix is ignored.
+pub async fn rebuild_chat_map(storage: &dyn SessionStore) -> HashMap<i64, Uuid> {
+    let sessions: Vec<SessionSummary> = storage.list_sessions().await.unwrap_or_default();
+    sessions
+        .into_iter()
+        .filter_map(|s| {
+            s.name
+                .as_deref()
+                .and_then(|n| n.strip_prefix("tg:"))
+                .and_then(|id_str| id_str.parse::<i64>().ok())
+                .map(|chat_id| (chat_id, s.id))
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Mutex;
+
+    use super::*;
+    use async_trait::async_trait;
+    use chrono::Utc;
+    use synapse_core::config::SessionConfig;
+    use synapse_core::session::{Session, StoredMessage};
+    use synapse_core::storage::{CleanupResult, SessionStore, StorageError};
+    use synapse_core::{Config, TelegramConfig};
+
+    /// Guards tests that mutate environment variables to prevent race conditions.
+    static ENV_MUTEX: Mutex<()> = Mutex::new(());
+
+    /// Minimal in-memory SessionStore mock for chat map tests.
+    struct MockSessionStore {
+        sessions: Vec<SessionSummary>,
+    }
+
+    impl MockSessionStore {
+        fn with_sessions(sessions: Vec<SessionSummary>) -> Self {
+            Self { sessions }
+        }
+    }
+
+    #[async_trait]
+    impl SessionStore for MockSessionStore {
+        async fn create_session(&self, _session: &Session) -> Result<(), StorageError> {
+            Ok(())
+        }
+
+        async fn get_session(&self, _id: Uuid) -> Result<Option<Session>, StorageError> {
+            Ok(None)
+        }
+
+        async fn list_sessions(&self) -> Result<Vec<SessionSummary>, StorageError> {
+            Ok(self.sessions.clone())
+        }
+
+        async fn touch_session(&self, _id: Uuid) -> Result<(), StorageError> {
+            Ok(())
+        }
+
+        async fn delete_session(&self, _id: Uuid) -> Result<bool, StorageError> {
+            Ok(false)
+        }
+
+        async fn add_message(&self, _message: &StoredMessage) -> Result<(), StorageError> {
+            Ok(())
+        }
+
+        async fn get_messages(
+            &self,
+            _session_id: Uuid,
+        ) -> Result<Vec<StoredMessage>, StorageError> {
+            Ok(vec![])
+        }
+
+        async fn cleanup(&self, _config: &SessionConfig) -> Result<CleanupResult, StorageError> {
+            Ok(CleanupResult::default())
+        }
+    }
+
+    // Token resolution tests
+
+    #[test]
+    fn test_resolve_token_env_var() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        // SAFETY: guarded by mutex; single-threaded section.
+        unsafe { std::env::set_var("TELEGRAM_BOT_TOKEN", "env-token-value") };
+
+        let config = Config {
+            telegram: Some(TelegramConfig {
+                token: Some("config-token".to_string()),
+                allowed_users: vec![],
+            }),
+            ..Config::default()
+        };
+
+        let result = resolve_bot_token(&config);
+        assert_eq!(result.unwrap(), "env-token-value");
+
+        // SAFETY: guarded by mutex.
+        unsafe { std::env::remove_var("TELEGRAM_BOT_TOKEN") };
+    }
+
+    #[test]
+    fn test_resolve_token_config() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        // SAFETY: guarded by mutex.
+        unsafe { std::env::remove_var("TELEGRAM_BOT_TOKEN") };
+
+        let config = Config {
+            telegram: Some(TelegramConfig {
+                token: Some("config-token".to_string()),
+                allowed_users: vec![],
+            }),
+            ..Config::default()
+        };
+
+        let result = resolve_bot_token(&config);
+        assert_eq!(result.unwrap(), "config-token");
+    }
+
+    #[test]
+    fn test_resolve_token_none() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        // SAFETY: guarded by mutex.
+        unsafe { std::env::remove_var("TELEGRAM_BOT_TOKEN") };
+
+        let config = Config::default(); // No telegram config.
+        let result = resolve_bot_token(&config);
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("TELEGRAM_BOT_TOKEN"));
+    }
+
+    #[test]
+    fn test_resolve_token_empty_env_var() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        // SAFETY: guarded by mutex.
+        unsafe { std::env::set_var("TELEGRAM_BOT_TOKEN", "") };
+
+        let config = Config {
+            telegram: Some(TelegramConfig {
+                token: Some("fallback-config-token".to_string()),
+                allowed_users: vec![],
+            }),
+            ..Config::default()
+        };
+
+        let result = resolve_bot_token(&config);
+        // Empty env var should fall through to config.
+        assert_eq!(result.unwrap(), "fallback-config-token");
+
+        // SAFETY: guarded by mutex.
+        unsafe { std::env::remove_var("TELEGRAM_BOT_TOKEN") };
+    }
+
+    // Chat map reconstruction tests
+
+    #[tokio::test]
+    async fn test_rebuild_chat_map_empty() {
+        let store = MockSessionStore::with_sessions(vec![]);
+        let map = rebuild_chat_map(&store).await;
+        assert!(map.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_rebuild_chat_map_with_telegram_sessions() {
+        let now = Utc::now();
+        let id1 = Uuid::new_v4();
+        let id2 = Uuid::new_v4();
+
+        let sessions = vec![
+            SessionSummary {
+                id: id1,
+                name: Some("tg:111222333".to_string()),
+                provider: "deepseek".to_string(),
+                model: "deepseek-chat".to_string(),
+                created_at: now,
+                updated_at: now,
+                message_count: 0,
+                preview: None,
+            },
+            SessionSummary {
+                id: id2,
+                name: Some("tg:444555666".to_string()),
+                provider: "deepseek".to_string(),
+                model: "deepseek-chat".to_string(),
+                created_at: now,
+                updated_at: now,
+                message_count: 0,
+                preview: None,
+            },
+        ];
+
+        let store = MockSessionStore::with_sessions(sessions);
+        let map = rebuild_chat_map(&store).await;
+
+        assert_eq!(map.len(), 2);
+        assert_eq!(map.get(&111222333i64), Some(&id1));
+        assert_eq!(map.get(&444555666i64), Some(&id2));
+    }
+
+    #[tokio::test]
+    async fn test_rebuild_chat_map_ignores_non_telegram() {
+        let now = Utc::now();
+        let tg_id = Uuid::new_v4();
+
+        let sessions = vec![
+            SessionSummary {
+                id: tg_id,
+                name: Some("tg:123456789".to_string()),
+                provider: "deepseek".to_string(),
+                model: "deepseek-chat".to_string(),
+                created_at: now,
+                updated_at: now,
+                message_count: 5,
+                preview: None,
+            },
+            SessionSummary {
+                id: Uuid::new_v4(),
+                name: Some("My CLI session".to_string()),
+                provider: "deepseek".to_string(),
+                model: "deepseek-chat".to_string(),
+                created_at: now,
+                updated_at: now,
+                message_count: 10,
+                preview: None,
+            },
+            SessionSummary {
+                id: Uuid::new_v4(),
+                name: None, // Unnamed session.
+                provider: "anthropic".to_string(),
+                model: "claude-3-5-sonnet-20241022".to_string(),
+                created_at: now,
+                updated_at: now,
+                message_count: 0,
+                preview: None,
+            },
+        ];
+
+        let store = MockSessionStore::with_sessions(sessions);
+        let map = rebuild_chat_map(&store).await;
+
+        // Only the tg: session should be in the map.
+        assert_eq!(map.len(), 1);
+        assert_eq!(map.get(&123456789i64), Some(&tg_id));
+    }
 }

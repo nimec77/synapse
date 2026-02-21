@@ -45,3 +45,14 @@ auto_cleanup = true
 # Can also be set via SYNAPSE_MCP_CONFIG environment variable (takes priority)
 # Defaults to ~/.config/synapse/mcp_servers.json
 # config_path = "mcp_servers.json"
+
+# Telegram bot configuration
+# [telegram]
+# Bot token — can also be set via TELEGRAM_BOT_TOKEN env var (takes priority)
+# WARNING: Never commit your bot token! Use the env var for production deployments.
+# token = "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
+#
+# Telegram user IDs allowed to interact with the bot.
+# An empty list (or omitting this field) rejects ALL users (secure by default).
+# To find your Telegram user ID, message @userinfobot on Telegram.
+# allowed_users = [123456789, 987654321]
