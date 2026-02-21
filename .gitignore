@@ -24,3 +24,6 @@ db/
 
 #MCP
 mcp_servers.json
+
+#System prompt
+system_prompt.md

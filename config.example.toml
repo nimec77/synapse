@@ -25,6 +25,11 @@ model = "deepseek-chat"
 # Keep it concise to minimize token usage.
 # system_prompt = "You are a helpful programming assistant."
 
+# Alternatively, load the system prompt from an external file.
+# Useful for long prompts (Markdown, structured instructions, etc.).
+# If both system_prompt and system_prompt_file are set, the inline value wins.
+# system_prompt_file = "prompts/system.md"
+
 # Session storage configuration
 [session]
 # Database URL for session storage
