@@ -27,11 +27,12 @@
 | 10. OpenAI Provider | ✅ Complete | 3/3 |
 | 11. MCP Integration | ✅ Complete | 5/5 |
 | 12. Telegram Bot (SY-13) | ✅ Complete | 5/5 |
-| 13. System Prompt | ⬜ Not Started | 0/5 |
+| 13. System Prompt | ✅ Complete | 5/5 |
+| 14. File Logging | ⬜ Not Started | 0/5 |
 
 **Legend:** ⬜ Not Started | 🔄 In Progress | ✅ Complete | ⏸️ Blocked
 
-**Current Phase:** 13
+**Current Phase:** 14
 **Last Updated:** 2026-02-21
 
 ---
@@ -216,13 +217,28 @@
 
 **Goal:** Wire `config.system_prompt` through the Agent to all provider calls.
 
-- [ ] 13.1 Add `system_prompt: Option<String>` to `Config` struct
-- [ ] 13.2 Add `system_prompt` field and `with_system_prompt()` builder to `Agent`
-- [ ] 13.3 Implement `build_messages()` helper to prepend `Role::System` on-the-fly
-- [ ] 13.4 Wire system prompt from config/session into Agent in CLI and Telegram
-- [ ] 13.5 Update `config.example.toml` with `system_prompt` example
+- [x] 13.1 Add `system_prompt: Option<String>` to `Config` struct
+- [x] 13.2 Add `system_prompt` field and `with_system_prompt()` builder to `Agent`
+- [x] 13.3 Implement `build_messages()` helper to prepend `Role::System` on-the-fly
+- [x] 13.4 Wire system prompt from config/session into Agent in CLI and Telegram
+- [x] 13.5 Update `config.example.toml` with `system_prompt` example
 
 **Test:** Setting `system_prompt` in config causes a `Role::System` message to be prepended to every provider call.
+
+---
+
+## Phase 14: File Logging
+
+**Goal:** Production-ready file-based logging with rotation for the Telegram bot.
+
+- [ ] 14.1 Add `LoggingConfig` struct to `synapse-core/src/config.rs` with defaults
+- [ ] 14.2 Add `tracing-appender` dependency and `registry` feature to `synapse-telegram`
+- [ ] 14.3 Rewrite tracing init with layered subscriber (stdout + file appender)
+- [ ] 14.4 Update `config.example.toml` with `[logging]` section documentation
+- [ ] 14.5 Update `docs/idea.md`, `docs/vision.md`, and `docs/tasklist.md`
+
+**Test:** Add `[logging]` to config, start the bot, verify log files appear in the
+configured directory with correct rotation and file count limits.
 
 ---
 
