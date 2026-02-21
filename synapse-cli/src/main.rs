@@ -181,7 +181,13 @@ async fn main() -> Result<()> {
     let provider = create_provider(&config).context("Failed to create LLM provider")?;
     let mcp_path = config.mcp.as_ref().and_then(|m| m.config_path.as_deref());
     let mcp_client = init_mcp_client(mcp_path).await;
-    let agent = Agent::new(provider, mcp_client);
+    let agent = {
+        let a = Agent::new(provider, mcp_client);
+        match config.system_prompt {
+            Some(ref prompt) => a.with_system_prompt(prompt),
+            None => a,
+        }
+    };
 
     // Stream response via agent (scoped to release borrows before shutdown)
     let response_content = {

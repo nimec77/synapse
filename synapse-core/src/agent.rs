@@ -47,7 +47,8 @@ pub enum AgentError {
 ///
 /// # async fn example() {
 /// let provider = Box::new(MockProvider::new().with_response("Hello!"));
-/// let agent = Agent::new(provider, None);
+/// let agent = Agent::new(provider, None)
+///     .with_system_prompt("You are a helpful assistant.");
 ///
 /// let mut messages = vec![Message::new(Role::User, "Hi")];
 /// let response = agent.complete(&mut messages).await.unwrap();
@@ -59,10 +60,18 @@ pub struct Agent {
     provider: Box<dyn LlmProvider>,
     /// Optional MCP client for tool execution.
     mcp_client: Option<McpClient>,
+    /// Optional system prompt prepended to every provider call.
+    ///
+    /// Injected on-the-fly via `build_messages()` and never stored in the
+    /// session database.
+    system_prompt: Option<String>,
 }
 
 impl Agent {
     /// Create a new agent with a provider and optional MCP client.
+    ///
+    /// The system prompt defaults to `None`. Use [`with_system_prompt`](Agent::with_system_prompt)
+    /// to configure it.
     ///
     /// # Arguments
     ///
@@ -72,6 +81,43 @@ impl Agent {
         Self {
             provider,
             mcp_client,
+            system_prompt: None,
+        }
+    }
+
+    /// Set the system prompt prepended to every provider call.
+    ///
+    /// The system prompt is injected on-the-fly via `build_messages()` and
+    /// is never stored in the session database.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use synapse_core::agent::Agent;
+    /// use synapse_core::provider::MockProvider;
+    ///
+    /// let agent = Agent::new(Box::new(MockProvider::new()), None)
+    ///     .with_system_prompt("You are a helpful assistant.");
+    /// ```
+    pub fn with_system_prompt(mut self, prompt: impl Into<String>) -> Self {
+        self.system_prompt = Some(prompt.into());
+        self
+    }
+
+    /// Build the message slice for a provider call, prepending the system prompt
+    /// when configured.
+    ///
+    /// Creates a new `Vec<Message>` each time. The caller's original messages are
+    /// never mutated with the system message.
+    fn build_messages(&self, messages: &[Message]) -> Vec<Message> {
+        match &self.system_prompt {
+            Some(prompt) => {
+                let mut result = Vec::with_capacity(messages.len() + 1);
+                result.push(Message::new(crate::message::Role::System, prompt.as_str()));
+                result.extend_from_slice(messages);
+                result
+            }
+            None => messages.to_vec(),
         }
     }
 
@@ -89,10 +135,13 @@ impl Agent {
         let tools = self.get_tool_definitions();
 
         for _ in 0..MAX_ITERATIONS {
+            let provider_messages = self.build_messages(messages);
             let response = if tools.is_empty() {
-                self.provider.complete(messages).await?
+                self.provider.complete(&provider_messages).await?
             } else {
-                self.provider.complete_with_tools(messages, &tools).await?
+                self.provider
+                    .complete_with_tools(&provider_messages, &tools)
+                    .await?
             };
 
             // Check for tool calls
@@ -144,7 +193,8 @@ impl Agent {
         if tools.is_empty() {
             // No tools: direct streaming, no loop needed
             return Box::pin(async_stream::stream! {
-                let mut stream = self.provider.stream(messages);
+                let provider_messages = self.build_messages(messages);
+                let mut stream = self.provider.stream(&provider_messages);
                 use futures::StreamExt;
                 while let Some(event) = stream.next().await {
                     yield event.map_err(AgentError::Provider);
@@ -182,7 +232,8 @@ impl Agent {
         if tools.is_empty() {
             // No tools: direct streaming, no loop needed
             return Box::pin(async_stream::stream! {
-                let mut stream = self.provider.stream(&messages);
+                let provider_messages = self.build_messages(&messages);
+                let mut stream = self.provider.stream(&provider_messages);
                 use futures::StreamExt;
                 while let Some(event) = stream.next().await {
                     yield event.map_err(AgentError::Provider);
@@ -242,6 +293,100 @@ mod tests {
     use crate::mcp::ToolDefinition;
     use crate::message::{Role, ToolCallData};
     use crate::provider::MockProvider;
+
+    // --- Task 4: Agent builder tests ---
+
+    #[test]
+    fn test_agent_default_system_prompt_none() {
+        let provider = Box::new(MockProvider::new());
+        let agent = Agent::new(provider, None);
+        assert_eq!(agent.system_prompt, None);
+    }
+
+    #[test]
+    fn test_agent_with_system_prompt() {
+        let provider = Box::new(MockProvider::new());
+        let agent = Agent::new(provider, None).with_system_prompt("test");
+        assert_eq!(agent.system_prompt, Some("test".to_string()));
+    }
+
+    // --- Task 7: build_messages() and complete() integration tests ---
+
+    #[test]
+    fn test_build_messages_with_system_prompt() {
+        let provider = Box::new(MockProvider::new());
+        let agent = Agent::new(provider, None).with_system_prompt("You are helpful.");
+
+        let messages = vec![Message::new(Role::User, "Hi")];
+        let result = agent.build_messages(&messages);
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].role, Role::System);
+        assert_eq!(result[0].content, "You are helpful.");
+        assert_eq!(result[1].role, Role::User);
+        assert_eq!(result[1].content, "Hi");
+    }
+
+    #[test]
+    fn test_build_messages_without_system_prompt() {
+        let provider = Box::new(MockProvider::new());
+        let agent = Agent::new(provider, None);
+
+        let messages = vec![Message::new(Role::User, "Hi")];
+        let result = agent.build_messages(&messages);
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].role, Role::User);
+        assert_eq!(result[0].content, "Hi");
+    }
+
+    #[test]
+    fn test_build_messages_preserves_original() {
+        let provider = Box::new(MockProvider::new());
+        let agent = Agent::new(provider, None).with_system_prompt("System.");
+
+        let messages = vec![Message::new(Role::User, "Hi")];
+        let _result = agent.build_messages(&messages);
+
+        // Original slice must be unmodified — no system message prepended to it.
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].role, Role::User);
+    }
+
+    #[test]
+    fn test_build_messages_with_history() {
+        let provider = Box::new(MockProvider::new());
+        let agent = Agent::new(provider, None).with_system_prompt("You are helpful.");
+
+        let messages = vec![
+            Message::new(Role::User, "Q1"),
+            Message::new(Role::Assistant, "A1"),
+            Message::new(Role::User, "Q2"),
+        ];
+        let result = agent.build_messages(&messages);
+
+        assert_eq!(result.len(), 4);
+        assert_eq!(result[0].role, Role::System);
+        assert_eq!(result[0].content, "You are helpful.");
+        assert_eq!(result[1].role, Role::User);
+        assert_eq!(result[1].content, "Q1");
+        assert_eq!(result[2].role, Role::Assistant);
+        assert_eq!(result[2].content, "A1");
+        assert_eq!(result[3].role, Role::User);
+        assert_eq!(result[3].content, "Q2");
+    }
+
+    #[tokio::test]
+    async fn test_agent_complete_with_system_prompt() {
+        let provider = Box::new(MockProvider::new().with_response("Hello!"));
+        let agent = Agent::new(provider, None).with_system_prompt("You are helpful.");
+
+        let mut messages = vec![Message::new(Role::User, "Hi")];
+        let response = agent.complete(&mut messages).await.unwrap();
+
+        assert_eq!(response.content, "Hello!");
+        assert_eq!(response.role, Role::Assistant);
+    }
 
     #[tokio::test]
     async fn test_agent_complete_no_tools() {

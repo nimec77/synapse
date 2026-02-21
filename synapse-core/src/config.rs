@@ -45,6 +45,14 @@ pub struct Config {
     #[serde(default = "default_model")]
     pub model: String,
 
+    /// System prompt prepended to every LLM conversation.
+    ///
+    /// Shapes the AI's personality and instructions across all interactions.
+    /// Injected on-the-fly via `Agent::build_messages()` and never stored in the
+    /// session database.
+    #[serde(default)]
+    pub system_prompt: Option<String>,
+
     /// Session storage configuration.
     #[serde(default)]
     pub session: Option<SessionConfig>,
@@ -198,6 +206,7 @@ impl Default for Config {
             provider: default_provider(),
             api_key: None,
             model: default_model(),
+            system_prompt: None,
             session: None,
             mcp: None,
             telegram: None,
@@ -451,5 +460,25 @@ token = "bot-token-only"
         let tg = TelegramConfig::default();
         assert!(tg.token.is_none());
         assert!(tg.allowed_users.is_empty());
+    }
+
+    #[test]
+    fn test_config_with_system_prompt() {
+        let toml = r#"system_prompt = "You are helpful.""#;
+        let config: Config = toml::from_str(toml).unwrap();
+        assert_eq!(config.system_prompt, Some("You are helpful.".to_string()));
+    }
+
+    #[test]
+    fn test_config_without_system_prompt() {
+        let toml = r#"provider = "deepseek""#;
+        let config: Config = toml::from_str(toml).unwrap();
+        assert_eq!(config.system_prompt, None);
+    }
+
+    #[test]
+    fn test_config_default_system_prompt() {
+        let config = Config::default();
+        assert_eq!(config.system_prompt, None);
     }
 }

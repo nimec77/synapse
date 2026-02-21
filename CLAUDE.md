@@ -34,6 +34,8 @@ synapse-cli / synapse-telegram      ← Interface binaries (use anyhow for error
         ▼
     synapse-core                    ← Shared library (uses thiserror for errors)
         │
+        ▼
+      Agent                         ← Orchestrator: tool call loop + system prompt injection
    ┌────┼────────────┐
    ▼    ▼            ▼
 LlmProvider  SessionStore   McpClient
@@ -42,10 +44,26 @@ LlmProvider  SessionStore   McpClient
    ▼            ▼
 Anthropic    SqliteStore
 DeepSeek
+OpenAI
 Mock
 ```
 
 **Critical rule:** `synapse-core` never imports from interface crates. Dependencies flow inward only.
+
+### Agent Orchestrator
+
+`Agent` (`synapse-core/src/agent.rs`) is the entry point for all inference. Interface crates never call `LlmProvider` directly — they always go through `Agent`.
+
+```rust
+let agent = Agent::new(provider, mcp_client)
+    .with_system_prompt("You are a helpful assistant."); // optional
+
+agent.complete(&mut messages).await?;   // blocking, handles tool call loop
+agent.stream(&messages)                 // streaming, no tools
+agent.stream_owned(messages)            // streaming, takes ownership
+```
+
+`build_messages()` is a private helper that prepends `Role::System` on-the-fly before every provider call without mutating or storing the system message in the session database. The tool call loop runs up to `MAX_ITERATIONS = 10`.
 
 ### Core Traits
 
@@ -78,8 +96,8 @@ pub trait SessionStore: Send + Sync {
 
 Providers return `Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send>>`. The `StreamEvent` enum (`provider/streaming.rs`):
 - `TextDelta(String)` — token fragment
-- `ToolCall { id, name, input }` — future MCP support
-- `ToolResult { id, output }` — future MCP support
+- `ToolCall { id, name, input }` — MCP tool call request from the LLM
+- `ToolResult { id, output }` — MCP tool execution result
 - `Done` — stream complete
 - `Error(ProviderError)`
 
@@ -87,7 +105,7 @@ CLI consumes streams with `tokio::select!` for Ctrl+C handling. Uses `async_stre
 
 ### Provider Factory
 
-`create_provider(config) -> Box<dyn LlmProvider>` in `provider/factory.rs`. API key resolution: **env var > config file** (e.g., `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`). Provider selection by `config.provider` string: `"deepseek"`, `"anthropic"`, `"mock"`.
+`create_provider(config) -> Box<dyn LlmProvider>` in `provider/factory.rs`. API key resolution: **env var > config file** (e.g., `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`). Provider selection by `config.provider` string: `"deepseek"`, `"anthropic"`, `"openai"`, `"mock"`.
 
 ### Config Loading
 
@@ -96,7 +114,7 @@ Priority (highest first):
 2. `./config.toml` (local directory)
 3. `~/.config/synapse/config.toml` (user default)
 
-`TelegramConfig` lives in `synapse-core/src/config.rs` as `pub telegram: Option<TelegramConfig>` on `Config`. Bot token resolution: `TELEGRAM_BOT_TOKEN` env var > `telegram.token` in config. Empty `allowed_users` rejects all users (secure by default).
+`Config` top-level fields: `provider`, `api_key`, `model`, `system_prompt: Option<String>` (injected on-the-fly, never stored in DB), `session`, `mcp`, `telegram`. `TelegramConfig` lives in `synapse-core/src/config.rs`. Bot token resolution: `TELEGRAM_BOT_TOKEN` env var > `telegram.token` in config. Empty `allowed_users` rejects all users (secure by default).
 
 ### Storage
 
@@ -104,8 +122,9 @@ SQLite via `sqlx` with WAL mode, connection pooling (max 5), automatic migration
 
 ### Error Types
 
-Three `thiserror` enums in `synapse-core`:
-- **`ProviderError`** (`provider.rs`): `ProviderError`, `RequestFailed`, `AuthenticationError`, `MissingApiKey`, `UnknownProvider`
+Four `thiserror` enums in `synapse-core`:
+- **`AgentError`** (`agent.rs`): `Provider(ProviderError)`, `Mcp(McpError)`, `MaxIterationsExceeded`
+- **`ProviderError`** (`provider.rs`): `RequestFailed`, `AuthenticationError`, `MissingApiKey`, `UnknownProvider`
 - **`StorageError`** (`storage.rs`): `Database`, `NotFound(Uuid)`, `Migration`, `InvalidData`
 - **`ConfigError`** (`config.rs`): `IoError`, `ParseError`
 
@@ -138,7 +157,7 @@ src/
 
 | Crate | Purpose |
 |-------|---------|
-| `synapse-core` | Core library: config, providers, storage, message types |
+| `synapse-core` | Core library: agent orchestrator, config, providers, storage, MCP, message types |
 | `synapse-cli` | CLI binary: one-shot, stdin, and session modes via `clap` |
 | `synapse-telegram` | Telegram bot interface: teloxide long-polling, session-per-chat, user allowlist |
 
@@ -203,5 +222,6 @@ Ticket artifacts live in: `docs/prd/`, `docs/research/`, `docs/plan/`, `docs/tas
 | SY-8 | Streaming Responses | Token-by-token streaming via SSE, DeepSeekProvider streaming, Ctrl+C handling |
 | SY-9 | Session Storage | SQLite persistence, SessionStore trait, session commands, auto-cleanup |
 | SY-10 | CLI REPL | Interactive TUI with ratatui/crossterm, multi-turn conversations, streaming, session resume |
-| SY-11 | MCP Integration | Agent orchestration layer, MCP client via rmcp, tool call loop in provider |
+| SY-11 | MCP Integration | Agent struct with tool call loop, MCP client via rmcp, tool discovery |
 | SY-13 | Telegram Bot | teloxide bot, session-per-chat persistence, user allowlist auth, TelegramConfig |
+| SY-14 | System Prompt | `system_prompt` in Config and Agent, `build_messages()` on-the-fly injection |
