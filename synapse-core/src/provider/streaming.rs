@@ -3,8 +3,6 @@
 //! This module defines the [`StreamEvent`] enum representing events
 //! emitted during streaming LLM responses.
 
-use crate::provider::ProviderError;
-
 /// Events emitted during streaming LLM responses.
 ///
 /// Each variant represents a different type of event that can occur
@@ -29,41 +27,11 @@ pub enum StreamEvent {
     /// The content is guaranteed to be non-empty.
     TextDelta(String),
 
-    /// A tool call request from the LLM.
-    ///
-    /// This variant is reserved for future MCP integration (Phase 11).
-    /// Currently not emitted by any provider implementation.
-    ToolCall {
-        /// Unique identifier for this tool call.
-        id: String,
-        /// Name of the tool to invoke.
-        name: String,
-        /// JSON input for the tool.
-        input: serde_json::Value,
-    },
-
-    /// Result of a tool invocation.
-    ///
-    /// This variant is reserved for future MCP integration (Phase 11).
-    /// Currently not emitted by any provider implementation.
-    ToolResult {
-        /// Tool call ID this result corresponds to.
-        id: String,
-        /// JSON output from the tool.
-        output: serde_json::Value,
-    },
-
     /// Stream completed successfully.
     ///
     /// This event signals the end of the stream. No more events
     /// will be yielded after this.
     Done,
-
-    /// An error occurred during streaming.
-    ///
-    /// This event wraps a [`ProviderError`] for consistent error handling.
-    /// The stream terminates after an error event.
-    Error(ProviderError),
 }
 
 #[cfg(test)]
@@ -76,33 +44,9 @@ mod tests {
         let text_delta = StreamEvent::TextDelta("Hello".to_string());
         assert!(matches!(text_delta, StreamEvent::TextDelta(s) if s == "Hello"));
 
-        // ToolCall variant
-        let tool_call = StreamEvent::ToolCall {
-            id: "call_123".to_string(),
-            name: "get_weather".to_string(),
-            input: serde_json::json!({"location": "London"}),
-        };
-        assert!(matches!(tool_call, StreamEvent::ToolCall { id, name, .. }
-            if id == "call_123" && name == "get_weather"));
-
-        // ToolResult variant
-        let tool_result = StreamEvent::ToolResult {
-            id: "call_123".to_string(),
-            output: serde_json::json!({"temperature": 20}),
-        };
-        assert!(matches!(tool_result, StreamEvent::ToolResult { id, .. }
-            if id == "call_123"));
-
         // Done variant
         let done = StreamEvent::Done;
         assert!(matches!(done, StreamEvent::Done));
-
-        // Error variant
-        let error = StreamEvent::Error(ProviderError::RequestFailed("timeout".to_string()));
-        assert!(matches!(
-            error,
-            StreamEvent::Error(ProviderError::RequestFailed(_))
-        ));
     }
 
     #[test]

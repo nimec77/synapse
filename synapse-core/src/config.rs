@@ -243,6 +243,7 @@ impl Config {
     /// Returns [`ConfigError::ParseError`] if the file is not valid TOML.
     pub fn load_from(path: impl AsRef<std::path::Path>) -> Result<Self, ConfigError> {
         let path = path.as_ref();
+        tracing::debug!(path = %path.display(), "config: loading from path");
         let content = std::fs::read_to_string(path).map_err(|source| ConfigError::IoError {
             path: path.to_path_buf(),
             source,

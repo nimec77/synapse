@@ -8,6 +8,7 @@ mod deepseek;
 mod factory;
 mod mock;
 mod openai;
+mod openai_compat;
 mod streaming;
 
 pub use anthropic::AnthropicProvider;
@@ -111,7 +112,6 @@ pub trait LlmProvider: Send + Sync {
     ///             Ok(StreamEvent::TextDelta(text)) => print!("{}", text),
     ///             Ok(StreamEvent::Done) => break,
     ///             Err(e) => eprintln!("Error: {}", e),
-    ///             _ => {}
     ///         }
     ///     }
     /// }

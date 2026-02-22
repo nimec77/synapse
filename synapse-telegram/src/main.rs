@@ -11,14 +11,14 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use handlers::ChatSessionMap;
-use synapse_core::{
-    Agent, Config, McpClient, SessionStore, SessionSummary, create_provider, create_storage,
-    load_mcp_config,
-};
+use synapse_core::{Agent, Config, SessionStore, SessionSummary, create_storage, init_mcp_client};
 use teloxide::prelude::*;
 use tokio::sync::RwLock;
 use tracing_subscriber::prelude::*;
 use uuid::Uuid;
+
+/// Default tracing directive enabling info-level logs for this crate.
+const DEFAULT_TRACING_DIRECTIVE: &str = "synapse_telegram=info";
 
 /// Initialize the tracing subscriber.
 ///
@@ -39,7 +39,7 @@ fn init_tracing(
             tracing_subscriber::fmt()
                 .with_env_filter(
                     tracing_subscriber::EnvFilter::from_default_env()
-                        .add_directive("synapse_telegram=info".parse()?),
+                        .add_directive(DEFAULT_TRACING_DIRECTIVE.parse()?),
                 )
                 .init();
             return Ok(None);
@@ -72,7 +72,7 @@ fn init_tracing(
         let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
 
         let env_filter = tracing_subscriber::EnvFilter::from_default_env()
-            .add_directive("synapse_telegram=info".parse()?);
+            .add_directive(DEFAULT_TRACING_DIRECTIVE.parse()?);
 
         let stdout_layer = tracing_subscriber::fmt::layer();
 
@@ -92,7 +92,7 @@ fn init_tracing(
         tracing_subscriber::fmt()
             .with_env_filter(
                 tracing_subscriber::EnvFilter::from_default_env()
-                    .add_directive("synapse_telegram=info".parse()?),
+                    .add_directive(DEFAULT_TRACING_DIRECTIVE.parse()?),
             )
             .init();
         Ok(None)
@@ -147,22 +147,13 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    // 6. Create LLM provider.
-    let provider = create_provider(&config).context("Failed to create LLM provider")?;
-
-    // 7. Initialize MCP client.
+    // 6. Initialize MCP client.
     let mcp_path = config.mcp.as_ref().and_then(|m| m.config_path.as_deref());
     let mcp_client = init_mcp_client(mcp_path).await;
 
-    // 8. Create Agent and wrap in Arc.
-    let agent = {
-        let a = Agent::new(provider, mcp_client);
-        match config.system_prompt {
-            Some(ref prompt) => a.with_system_prompt(prompt),
-            None => a,
-        }
-    };
-    let agent = Arc::new(agent);
+    // 7. Create Agent from config and wrap in Arc.
+    let agent =
+        Arc::new(Agent::from_config(&config, mcp_client).context("Failed to create agent")?);
 
     // 9. Rebuild chat-to-session map from persisted sessions.
     let initial_map = rebuild_chat_map(storage.as_ref().as_ref()).await;
@@ -202,25 +193,6 @@ async fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
-}
-
-/// Initialize MCP client from config path, returning `None` on any error.
-async fn init_mcp_client(config_path: Option<&str>) -> Option<McpClient> {
-    match load_mcp_config(config_path) {
-        Ok(Some(cfg)) => match McpClient::new(&cfg).await {
-            Ok(client) if client.has_tools() => Some(client),
-            Ok(_) => None,
-            Err(e) => {
-                tracing::warn!("MCP initialization failed: {}", e);
-                None
-            }
-        },
-        Ok(None) => None,
-        Err(e) => {
-            tracing::warn!("MCP config error: {}", e);
-            None
-        }
-    }
 }
 
 /// Resolve the bot token with the following priority:

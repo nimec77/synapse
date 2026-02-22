@@ -8,6 +8,13 @@ use crate::provider::{
     AnthropicProvider, DeepSeekProvider, LlmProvider, OpenAiProvider, ProviderError,
 };
 
+/// Environment variable name for the DeepSeek API key.
+const DEEPSEEK_API_KEY_ENV: &str = "DEEPSEEK_API_KEY";
+/// Environment variable name for the Anthropic API key.
+const ANTHROPIC_API_KEY_ENV: &str = "ANTHROPIC_API_KEY";
+/// Environment variable name for the OpenAI API key.
+const OPENAI_API_KEY_ENV: &str = "OPENAI_API_KEY";
+
 /// Create an LLM provider based on configuration.
 ///
 /// Selects the appropriate provider based on `config.provider` and retrieves
@@ -45,6 +52,8 @@ pub fn create_provider(config: &Config) -> Result<Box<dyn LlmProvider>, Provider
 
     let api_key = get_api_key(config)?;
 
+    tracing::info!(provider = %config.provider, model = %config.model, "factory: creating provider");
+
     match config.provider.as_str() {
         "deepseek" => Ok(Box::new(DeepSeekProvider::new(api_key, &config.model))),
         "anthropic" => Ok(Box::new(AnthropicProvider::new(api_key, &config.model))),
@@ -62,9 +71,9 @@ pub fn create_provider(config: &Config) -> Result<Box<dyn LlmProvider>, Provider
 /// Panics if called with an unknown provider (caller should validate first).
 fn get_api_key(config: &Config) -> Result<String, ProviderError> {
     let env_var = match config.provider.as_str() {
-        "deepseek" => "DEEPSEEK_API_KEY",
-        "anthropic" => "ANTHROPIC_API_KEY",
-        "openai" => "OPENAI_API_KEY",
+        "deepseek" => DEEPSEEK_API_KEY_ENV,
+        "anthropic" => ANTHROPIC_API_KEY_ENV,
+        "openai" => OPENAI_API_KEY_ENV,
         _ => unreachable!("Provider should be validated before calling get_api_key"),
     };
 

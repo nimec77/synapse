@@ -12,20 +12,9 @@ pub mod session;
 pub mod storage;
 
 pub use agent::{Agent, AgentError};
-pub use config::{Config, ConfigError, LoggingConfig, McpSettings, SessionConfig, TelegramConfig};
-pub use mcp::{McpClient, McpConfig, McpError, McpServerConfig, ToolDefinition, load_mcp_config};
-pub use message::{Message, Role, ToolCallData};
-pub use provider::{
-    AnthropicProvider, DeepSeekProvider, LlmProvider, MockProvider, OpenAiProvider, ProviderError,
-    StreamEvent, create_provider,
-};
+pub use config::{Config, TelegramConfig};
+pub use mcp::{McpClient, init_mcp_client, load_mcp_config};
+pub use message::{Message, Role};
+pub use provider::{LlmProvider, StreamEvent, create_provider};
 pub use session::{Session, SessionSummary, StoredMessage};
-pub use storage::{CleanupResult, SessionStore, SqliteStore, StorageError, create_storage};
-
-/// Placeholder module for initial setup.
-pub mod placeholder {
-    /// Returns a greeting message.
-    pub fn hello() -> &'static str {
-        "Hello from synapse-core!"
-    }
-}
+pub use storage::{SessionStore, create_storage};

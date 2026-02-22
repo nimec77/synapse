@@ -36,6 +36,33 @@ pub enum McpError {
     IoError(String),
 }
 
+/// Initialize an MCP client from a config file path, returning `None` on any error.
+///
+/// This is the canonical shared initialization helper used by all interface crates.
+/// Servers that fail to connect are logged as warnings but do not prevent startup.
+/// Returns `None` if:
+/// - No config file exists at the resolved path
+/// - The config file fails to parse
+/// - `McpClient::new()` fails
+/// - The connected client has no tools registered
+pub async fn init_mcp_client(config_path: Option<&str>) -> Option<McpClient> {
+    match load_mcp_config(config_path) {
+        Ok(Some(config)) => match McpClient::new(&config).await {
+            Ok(client) if client.has_tools() => Some(client),
+            Ok(_) => None,
+            Err(e) => {
+                tracing::warn!("MCP initialization failed: {}", e);
+                None
+            }
+        },
+        Ok(None) => None,
+        Err(e) => {
+            tracing::warn!("MCP config error: {}", e);
+            None
+        }
+    }
+}
+
 /// Load MCP configuration from file.
 ///
 /// Path resolution priority:
