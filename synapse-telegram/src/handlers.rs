@@ -18,6 +18,9 @@ use uuid::Uuid;
 /// Telegram's maximum message length in characters.
 const TELEGRAM_MSG_LIMIT: usize = 4096;
 
+/// Error message sent to the user when agent or session operations fail.
+const ERROR_REPLY: &str = "Sorry, I encountered an error. Please try again.";
+
 /// In-memory map from Telegram chat IDs to session UUIDs.
 pub type ChatSessionMap = Arc<RwLock<HashMap<i64, Uuid>>>;
 
@@ -64,11 +67,7 @@ pub async fn handle_message(
         Ok(id) => id,
         Err(e) => {
             tracing::error!("Failed to resolve session for chat {}: {}", chat_id, e);
-            bot.send_message(
-                msg.chat.id,
-                "Sorry, I encountered an error. Please try again.",
-            )
-            .await?;
+            bot.send_message(msg.chat.id, ERROR_REPLY).await?;
             return Ok(());
         }
     };
@@ -117,11 +116,7 @@ pub async fn handle_message(
         }
         Err(e) => {
             tracing::error!("Agent error for chat {}: {}", chat_id, e);
-            bot.send_message(
-                msg.chat.id,
-                "Sorry, I encountered an error. Please try again.",
-            )
-            .await?;
+            bot.send_message(msg.chat.id, ERROR_REPLY).await?;
         }
     }
 

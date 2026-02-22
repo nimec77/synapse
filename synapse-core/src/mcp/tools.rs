@@ -47,14 +47,16 @@ impl McpClient {
             match Self::connect_server(name, server_config).await {
                 Ok((client, tools)) => {
                     // Register all discovered tools
+                    let tool_count = tools.len();
                     for tool in &tools {
                         tool_registry.insert(tool.name.clone(), name.clone());
                     }
                     tool_definitions.extend(tools);
                     servers.insert(name.clone(), RunningClient { client });
+                    tracing::info!(server = %name, tool_count, "mcp: server connected");
                 }
                 Err(e) => {
-                    eprintln!("Warning: MCP server '{}' failed to start: {}", name, e);
+                    tracing::warn!("MCP server '{}' failed to start: {}", name, e);
                 }
             }
         }
@@ -163,6 +165,7 @@ impl McpClient {
         name: &str,
         input: serde_json::Value,
     ) -> Result<serde_json::Value, McpError> {
+        tracing::debug!(tool = %name, "mcp: calling tool");
         let server_name = self
             .tool_registry
             .get(name)

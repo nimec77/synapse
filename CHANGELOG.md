@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **SY-16: Phase 15 Code Refactoring** - Internal quality pass across the entire workspace with zero
+  external behaviour changes:
+  - Dead code removed: `placeholder` module deleted from `synapse-core`; `StreamEvent` reduced to
+    `TextDelta(String)` and `Done` (removed unused `ToolCall`, `ToolResult`, `Error` variants)
+  - OpenAI-compatible provider logic centralised: `synapse-core/src/provider/openai_compat.rs`
+    (754 lines) now holds all shared serde types and functions; `deepseek.rs` reduced from 840 to
+    118 lines; `openai.rs` reduced from 678 to 96 lines; both are thin wrappers delegating to
+    `openai_compat`
+  - Magic strings replaced with typed constants and methods: `Role::as_str()` and
+    `impl FromStr for Role` added to `synapse-core`; `SSE_DONE_MARKER`, `DEFAULT_MAX_TOKENS`,
+    `ERROR_REPLY`, `DEFAULT_TRACING_DIRECTIVE`, `DEEPSEEK_API_KEY_ENV`, `ANTHROPIC_API_KEY_ENV`,
+    `OPENAI_API_KEY_ENV` constants extracted to their respective modules
+  - Structured tracing added to `synapse-core` and `synapse-cli`: `tracing = "0.1"` added to
+    both crates; agent tool loop, HTTP requests, provider factory, SQLite CRUD, config path
+    resolution, and MCP operations are instrumented at `debug!`/`info!` level; all `eprintln!`
+    calls in core and CLI function bodies replaced with `tracing::warn!`/`tracing::info!`; tracing
+    is silent by default unless `RUST_LOG` is set
+  - Shared utilities extracted to `synapse-core`: `init_mcp_client()` has a single canonical
+    definition in `synapse-core/src/mcp.rs` (removed from CLI and Telegram main files);
+    `Agent::from_config(config, mcp_client)` factory method encapsulates provider creation and
+    system prompt wiring; used at all three call sites (CLI one-shot, CLI REPL, Telegram)
+  - Large files split: `repl.rs` (1168 lines) split into `repl/app.rs` (state), `repl/render.rs`
+    (TUI layout), `repl/input.rs` (key handling), and `repl.rs` orchestrator (274 lines); no
+    `mod.rs` files created; `commands.rs` extracted from `main.rs` containing `Commands`,
+    `SessionAction`, `handle_command`, `truncate`
+  - Public API surface tightened: 17 re-exports removed from `synapse-core/src/lib.rs` that no
+    consumer crate imports directly (concrete provider types, internal error types, internal config
+    types); 17 essential items kept; removed items remain accessible via full module paths
+  - Async I/O fix: `std::fs::create_dir_all()` in `sqlite.rs` replaced with
+    `tokio::fs::create_dir_all().await`; `fs` feature added to tokio in `synapse-core/Cargo.toml`
+
 ### Added
 
 - **SY-15: File Logging** - File-based logging with automatic rotation for the Telegram bot:

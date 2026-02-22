@@ -1,17 +1,19 @@
 //! Synapse CLI - Command-line interface for the Synapse AI agent.
 
+mod commands;
 mod repl;
 
 use std::io::{self, IsTerminal, Read, Write};
 
-use anyhow::{Context, Result, bail};
-use clap::{Parser, Subcommand};
+use anyhow::{Context, Result};
+use clap::Parser;
 use futures::StreamExt;
 use uuid::Uuid;
 
+use commands::{Commands, handle_command};
 use synapse_core::{
-    Agent, Config, McpClient, Message, Role, Session, StoredMessage, StreamEvent, create_provider,
-    create_storage, load_mcp_config,
+    Agent, Config, Message, Role, Session, StoredMessage, StreamEvent, create_storage,
+    init_mcp_client,
 };
 
 /// Synapse CLI - AI agent command-line interface
@@ -39,52 +41,12 @@ struct Args {
     command: Option<Commands>,
 }
 
-#[derive(Subcommand)]
-enum Commands {
-    /// Session management commands
-    Sessions {
-        #[command(subcommand)]
-        action: SessionAction,
-    },
-}
-
-#[derive(Subcommand)]
-enum SessionAction {
-    /// List all sessions
-    List,
-    /// Show messages in a session
-    Show {
-        /// Session ID to show
-        id: Uuid,
-    },
-    /// Delete a session
-    Delete {
-        /// Session ID to delete
-        id: Uuid,
-    },
-}
-
-/// Initialize MCP client from config, returning None on any error.
-async fn init_mcp_client(config_path: Option<&str>) -> Option<McpClient> {
-    match load_mcp_config(config_path) {
-        Ok(Some(config)) => match McpClient::new(&config).await {
-            Ok(client) if client.has_tools() => Some(client),
-            Ok(_) => None,
-            Err(e) => {
-                eprintln!("Warning: MCP initialization failed: {}", e);
-                None
-            }
-        },
-        Ok(None) => None,
-        Err(e) => {
-            eprintln!("Warning: MCP config error: {}", e);
-            None
-        }
-    }
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .init();
+
     let args = Args::parse();
     let mut config = Config::load().unwrap_or_default();
 
@@ -109,10 +71,9 @@ async fn main() -> Result<()> {
             let _ = storage.cleanup(&session_config).await;
         }
 
-        let provider = create_provider(&config).context("Failed to create LLM provider")?;
         let mcp_path = config.mcp.as_ref().and_then(|m| m.config_path.as_deref());
         let mcp_client = init_mcp_client(mcp_path).await;
-        return repl::run_repl(&config, provider, storage, args.session, mcp_client).await;
+        return repl::run_repl(&config, storage, args.session, mcp_client).await;
     }
 
     // Get message or show help
@@ -177,17 +138,10 @@ async fn main() -> Result<()> {
         .await
         .context("Failed to store user message")?;
 
-    // Create provider and agent
-    let provider = create_provider(&config).context("Failed to create LLM provider")?;
+    // Create agent from config and MCP client
     let mcp_path = config.mcp.as_ref().and_then(|m| m.config_path.as_deref());
     let mcp_client = init_mcp_client(mcp_path).await;
-    let agent = {
-        let a = Agent::new(provider, mcp_client);
-        match config.system_prompt {
-            Some(ref prompt) => a.with_system_prompt(prompt),
-            None => a,
-        }
-    };
+    let agent = Agent::from_config(&config, mcp_client).context("Failed to create agent")?;
 
     // Stream response via agent (scoped to release borrows before shutdown)
     let response_content = {
@@ -209,12 +163,6 @@ async fn main() -> Result<()> {
                         Some(Ok(StreamEvent::Done)) | None => {
                             println!(); // Final newline
                             break;
-                        }
-                        Some(Ok(StreamEvent::Error(e))) => {
-                            return Err(e).context("Streaming error");
-                        }
-                        Some(Ok(_)) => {
-                            // Ignore ToolCall/ToolResult (agent handles internally)
                         }
                         Some(Err(e)) => {
                             return Err(e).context("Agent error");
@@ -246,119 +194,6 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-/// Handle session management subcommands.
-async fn handle_command(command: Commands) -> Result<()> {
-    let config = Config::load().unwrap_or_default();
-    let session_config = config.session.unwrap_or_default();
-    let storage = create_storage(session_config.database_url.as_deref())
-        .await
-        .context("Failed to create storage")?;
-
-    match command {
-        Commands::Sessions { action } => match action {
-            SessionAction::List => {
-                let sessions = storage
-                    .list_sessions()
-                    .await
-                    .context("Failed to list sessions")?;
-
-                if sessions.is_empty() {
-                    println!("No sessions found.");
-                    return Ok(());
-                }
-
-                // Print header
-                println!(
-                    "{:<36}  {:<15}  {:<15}  {:<10}  PREVIEW",
-                    "ID", "PROVIDER", "MODEL", "MESSAGES"
-                );
-                println!("{:-<100}", "");
-
-                // Print sessions
-                for session in sessions {
-                    let preview = session.preview.as_deref().unwrap_or("-").replace('\n', " ");
-                    println!(
-                        "{:<36}  {:<15}  {:<15}  {:<10}  {}",
-                        session.id,
-                        truncate(&session.provider, 15),
-                        truncate(&session.model, 15),
-                        session.message_count,
-                        truncate(&preview, 40)
-                    );
-                }
-            }
-            SessionAction::Show { id } => {
-                let session = storage
-                    .get_session(id)
-                    .await
-                    .context("Failed to get session")?;
-
-                let Some(session) = session else {
-                    bail!("Session not found: {}", id);
-                };
-
-                let messages = storage
-                    .get_messages(id)
-                    .await
-                    .context("Failed to get messages")?;
-
-                // Print session info
-                println!("Session: {}", session.id);
-                println!("Provider: {}", session.provider);
-                println!("Model: {}", session.model);
-                println!(
-                    "Created: {}",
-                    session.created_at.format("%Y-%m-%d %H:%M:%S")
-                );
-                println!();
-
-                if messages.is_empty() {
-                    println!("No messages in this session.");
-                    return Ok(());
-                }
-
-                // Print messages
-                for msg in messages {
-                    let role_label = match msg.role {
-                        Role::System => "[SYSTEM]",
-                        Role::User => "[USER]",
-                        Role::Assistant => "[ASSISTANT]",
-                        Role::Tool => "[TOOL]",
-                    };
-                    println!("{}", role_label);
-                    println!("{}", msg.content);
-                    println!();
-                }
-            }
-            SessionAction::Delete { id } => {
-                let deleted = storage
-                    .delete_session(id)
-                    .await
-                    .context("Failed to delete session")?;
-
-                if deleted {
-                    println!("Session {} deleted.", id);
-                } else {
-                    bail!("Session not found: {}", id);
-                }
-            }
-        },
-    }
-
-    Ok(())
-}
-
-/// Truncate a string to a maximum length, adding "..." if truncated.
-fn truncate(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
-        s.to_string()
-    } else if max_len <= 3 {
-        ".".repeat(max_len)
-    } else {
-        format!("{}...", &s[..max_len - 3])
-    }
-}
-
 /// Retrieves the message from arguments or stdin.
 ///
 /// Priority: positional argument > stdin > error (if TTY)
@@ -386,6 +221,7 @@ fn get_message(args: &Args) -> io::Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use commands::truncate;
 
     #[test]
     fn test_args_parse() {

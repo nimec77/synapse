@@ -156,6 +156,7 @@ impl AnthropicProvider {
 
     /// Send request and parse response.
     async fn send_request(&self, request: &ApiRequest) -> Result<Message, ProviderError> {
+        tracing::debug!(endpoint = API_ENDPOINT, "anthropic: POST complete request");
         let response = self
             .client
             .post(API_ENDPOINT)
@@ -168,6 +169,7 @@ impl AnthropicProvider {
             .map_err(|e| ProviderError::RequestFailed(e.to_string()))?;
 
         let status = response.status();
+        tracing::debug!(status = status.as_u16(), "anthropic: response status");
 
         if status == reqwest::StatusCode::UNAUTHORIZED {
             let error_body: ApiError = response.json().await.unwrap_or_else(|_| ApiError {

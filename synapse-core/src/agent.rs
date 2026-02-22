@@ -7,6 +7,7 @@ use std::pin::Pin;
 
 use futures::Stream;
 
+use crate::config::Config;
 use crate::mcp::McpClient;
 use crate::message::Message;
 use crate::provider::{LlmProvider, ProviderError, StreamEvent};
@@ -85,6 +86,30 @@ impl Agent {
         }
     }
 
+    /// Create an agent from application configuration and an optional MCP client.
+    ///
+    /// This is the canonical factory for all interface crates. It calls
+    /// [`create_provider`](crate::provider::create_provider) internally so callers
+    /// do not need to construct the provider themselves.
+    ///
+    /// The system prompt is resolved from `config.system_prompt` if set.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ProviderError`] if the configured provider cannot be created
+    /// (e.g., missing API key, unknown provider name).
+    pub fn from_config(
+        config: &Config,
+        mcp_client: Option<McpClient>,
+    ) -> Result<Self, ProviderError> {
+        let provider = crate::provider::create_provider(config)?;
+        let agent = Self::new(provider, mcp_client);
+        Ok(match config.system_prompt {
+            Some(ref prompt) => agent.with_system_prompt(prompt),
+            None => agent,
+        })
+    }
+
     /// Set the system prompt prepended to every provider call.
     ///
     /// The system prompt is injected on-the-fly via `build_messages()` and
@@ -134,7 +159,8 @@ impl Agent {
     pub async fn complete(&self, messages: &mut Vec<Message>) -> Result<Message, AgentError> {
         let tools = self.get_tool_definitions();
 
-        for _ in 0..MAX_ITERATIONS {
+        for iteration in 0..MAX_ITERATIONS {
+            tracing::debug!(iteration, "agent: starting tool call iteration");
             let provider_messages = self.build_messages(messages);
             let response = if tools.is_empty() {
                 self.provider.complete(&provider_messages).await?
@@ -155,6 +181,7 @@ impl Agent {
                 messages.push(response);
 
                 for tool_call in &tool_calls_to_execute {
+                    tracing::debug!(tool = %tool_call.name, "agent: calling tool");
                     let result = self.execute_tool(&tool_call.name, &tool_call.input).await;
                     let result_content = match result {
                         Ok(value) => match value {
@@ -539,7 +566,6 @@ mod tests {
                 Ok(StreamEvent::TextDelta(text)) => tokens.push(text),
                 Ok(StreamEvent::Done) => break,
                 Err(e) => panic!("Unexpected error: {}", e),
-                _ => {}
             }
         }
 

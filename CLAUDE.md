@@ -55,8 +55,13 @@ Mock
 `Agent` (`synapse-core/src/agent.rs`) is the entry point for all inference. Interface crates never call `LlmProvider` directly — they always go through `Agent`.
 
 ```rust
+// Preferred: construct from config (calls create_provider + applies system prompt internally)
+let mcp_client = init_mcp_client(config.mcp.as_ref().map(|m| m.config_path.as_str())).await;
+let agent = Agent::from_config(&config, mcp_client)?;
+
+// Low-level: manual construction
 let agent = Agent::new(provider, mcp_client)
-    .with_system_prompt("You are a helpful assistant."); // optional
+    .with_system_prompt("You are a helpful assistant.");
 
 agent.complete(&mut messages).await?;   // blocking, handles tool call loop
 agent.stream(&messages)                 // streaming, no tools
@@ -94,18 +99,17 @@ pub trait SessionStore: Send + Sync {
 
 ### Streaming
 
-Providers return `Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send>>`. The `StreamEvent` enum (`provider/streaming.rs`):
+Providers return `Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send>>`. The `StreamEvent` enum (`provider/streaming.rs`) has exactly two variants:
 - `TextDelta(String)` — token fragment
-- `ToolCall { id, name, input }` — MCP tool call request from the LLM
-- `ToolResult { id, output }` — MCP tool execution result
 - `Done` — stream complete
-- `Error(ProviderError)`
 
-CLI consumes streams with `tokio::select!` for Ctrl+C handling. Uses `async_stream::stream!` macro and `eventsource-stream` for SSE parsing.
+Tool call detection and MCP execution happen inside `Agent::complete()` synchronously; streaming (`Agent::stream`) does not handle tools. CLI consumes streams with `tokio::select!` for Ctrl+C handling. Uses `async_stream::stream!` macro and `eventsource-stream` for SSE parsing.
 
 ### Provider Factory
 
 `create_provider(config) -> Box<dyn LlmProvider>` in `provider/factory.rs`. API key resolution: **env var > config file** (e.g., `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`). Provider selection by `config.provider` string: `"deepseek"`, `"anthropic"`, `"openai"`, `"mock"`.
+
+**Adding a new OpenAI-compatible provider:** use `provider/openai_compat.rs` as the shared base (serde types, `build_api_messages`, `complete_request`, `stream_sse`, `SSE_DONE_MARKER`). See `deepseek.rs` and `openai.rs` for thin-wrapper examples (~70 lines each).
 
 ### Config Loading
 
@@ -158,7 +162,7 @@ src/
 | Crate | Purpose |
 |-------|---------|
 | `synapse-core` | Core library: agent orchestrator, config, providers, storage, MCP, message types |
-| `synapse-cli` | CLI binary: one-shot, stdin, and session modes via `clap` |
+| `synapse-cli` | CLI binary: one-shot, stdin, and session modes via `clap`; REPL split into `repl/app.rs`, `repl/render.rs`, `repl/input.rs`; session commands in `commands.rs` |
 | `synapse-telegram` | Telegram bot interface: teloxide long-polling, session-per-chat, user allowlist |
 
 ## CI/CD
@@ -177,7 +181,7 @@ GitHub Actions on push to `master`/`feature/*` and PRs to `master`:
 - **CLI**: `clap` for args, `ratatui` + `crossterm` for REPL UI
 - **MCP**: `rmcp` for Model Context Protocol
 - **Telegram**: `teloxide` 0.13 with `macros` feature, dptree dependency injection
-- **File Logging**: `tracing-appender` 0.2 with non-blocking writer and rolling rotation (Telegram only)
+- **Tracing**: `tracing` 0.1 in `synapse-core` and `synapse-cli` (structured spans/events); `tracing-appender` 0.2 with non-blocking rolling-file writer in Telegram only. CLI initialises a `tracing-subscriber` env-filter subscriber in `main.rs`.
 - **IDs**: `uuid` v4/v7
 
 ## Documentation
@@ -227,3 +231,4 @@ Ticket artifacts live in: `docs/prd/`, `docs/research/`, `docs/plan/`, `docs/tas
 | SY-13 | Telegram Bot | teloxide bot, session-per-chat persistence, user allowlist auth, TelegramConfig |
 | SY-14 | System Prompt | `system_prompt` in Config and Agent, `build_messages()` on-the-fly injection |
 | SY-15 | File Logging | `LoggingConfig` in core, `tracing-appender` layered subscriber in Telegram bot |
+| SY-16 | Code Refactoring | Dead code removal, `openai_compat.rs` shared base, magic-string constants, structured tracing, `Agent::from_config()`, `init_mcp_client()` in core, REPL file split, API surface tightened |

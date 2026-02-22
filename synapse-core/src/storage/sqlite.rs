@@ -59,7 +59,7 @@ impl SqliteStore {
         // Ensure parent directory exists
         let path = PathBuf::from(url);
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| {
+            tokio::fs::create_dir_all(parent).await.map_err(|e| {
                 StorageError::Database(format!("failed to create database directory: {}", e))
             })?;
         }
@@ -93,29 +93,19 @@ impl SqliteStore {
 
     /// Parse a Role from a string.
     fn parse_role(s: &str) -> Result<Role, StorageError> {
-        match s {
-            "system" => Ok(Role::System),
-            "user" => Ok(Role::User),
-            "assistant" => Ok(Role::Assistant),
-            "tool" => Ok(Role::Tool),
-            _ => Err(StorageError::InvalidData(format!("unknown role: {}", s))),
-        }
+        s.parse::<Role>().map_err(StorageError::InvalidData)
     }
 
     /// Convert Role to string for storage.
     fn role_to_string(role: Role) -> &'static str {
-        match role {
-            Role::System => "system",
-            Role::User => "user",
-            Role::Assistant => "assistant",
-            Role::Tool => "tool",
-        }
+        role.as_str()
     }
 }
 
 #[async_trait]
 impl SessionStore for SqliteStore {
     async fn create_session(&self, session: &Session) -> Result<(), StorageError> {
+        tracing::debug!(session_id = %session.id, "sqlite: creating session");
         sqlx::query(
             r#"
             INSERT INTO sessions (id, name, provider, model, system_prompt, created_at, updated_at)
@@ -137,6 +127,7 @@ impl SessionStore for SqliteStore {
     }
 
     async fn get_session(&self, id: Uuid) -> Result<Option<Session>, StorageError> {
+        tracing::debug!(session_id = %id, "sqlite: retrieving session");
         let row = sqlx::query(
             r#"
             SELECT id, name, provider, model, system_prompt, created_at, updated_at
@@ -257,6 +248,7 @@ impl SessionStore for SqliteStore {
     }
 
     async fn delete_session(&self, id: Uuid) -> Result<bool, StorageError> {
+        tracing::debug!(session_id = %id, "sqlite: deleting session");
         let result = sqlx::query(
             r#"
             DELETE FROM sessions WHERE id = ?
@@ -271,6 +263,7 @@ impl SessionStore for SqliteStore {
     }
 
     async fn add_message(&self, message: &StoredMessage) -> Result<(), StorageError> {
+        tracing::debug!(session_id = %message.session_id, role = %message.role.as_str(), "sqlite: adding message");
         // Insert message
         sqlx::query(
             r#"

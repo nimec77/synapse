@@ -19,6 +19,35 @@ pub enum Role {
     Tool,
 }
 
+impl Role {
+    /// Return the lowercase string representation of this role.
+    ///
+    /// Used for OpenAI-compatible wire format and SQLite storage.
+    /// Matches the values expected by the API and stored in the database.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Role::System => "system",
+            Role::User => "user",
+            Role::Assistant => "assistant",
+            Role::Tool => "tool",
+        }
+    }
+}
+
+impl std::str::FromStr for Role {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "system" => Ok(Role::System),
+            "user" => Ok(Role::User),
+            "assistant" => Ok(Role::Assistant),
+            "tool" => Ok(Role::Tool),
+            other => Err(format!("unknown role: {}", other)),
+        }
+    }
+}
+
 /// Data for a single tool call requested by the LLM.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ToolCallData {
