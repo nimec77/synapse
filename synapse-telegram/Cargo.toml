@@ -9,6 +9,7 @@ path = "src/main.rs"
 
 [dependencies]
 synapse-core = { path = "../synapse-core" }
+clap = { version = "4.5.54", features = ["derive"] }
 teloxide = { version = "0.17.0", features = ["macros"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 anyhow = "1"

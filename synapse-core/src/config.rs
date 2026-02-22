@@ -3,7 +3,7 @@
 //! Provides configuration loading from TOML files with support for
 //! multiple file locations, environment variable overrides, and sensible defaults.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 use thiserror::Error;
@@ -28,6 +28,10 @@ pub enum ConfigError {
         /// The underlying TOML parse error.
         source: toml::de::Error,
     },
+
+    /// No configuration file found in any of the default search locations.
+    #[error("config file not found; searched ./config.toml and ~/.config/synapse/config.toml")]
+    NotFound,
 }
 
 /// Application configuration loaded from TOML file.
@@ -193,26 +197,22 @@ fn default_model() -> String {
 }
 
 impl Config {
-    /// Load configuration from file system.
+    /// Load configuration from an explicit path or from the default search locations.
     ///
     /// Priority order:
-    /// 1. SYNAPSE_CONFIG environment variable
-    /// 2. ./config.toml (local directory)
-    /// 3. ~/.config/synapse/config.toml (user config)
-    ///
-    /// Returns default config if no config file found.
+    /// 1. `path` argument (e.g. from `--config` CLI flag) — error if the file is missing.
+    /// 2. `./config.toml` (current directory).
+    /// 3. `~/.config/synapse/config.toml` (user config directory).
     ///
     /// # Errors
     ///
-    /// Returns [`ConfigError::IoError`] if a found file cannot be read.
-    /// Returns [`ConfigError::ParseError`] if a found file is not valid TOML.
-    pub fn load() -> Result<Self, ConfigError> {
-        // 1. Environment variable (highest priority)
-        if let Ok(path) = std::env::var("SYNAPSE_CONFIG") {
-            let p = PathBuf::from(&path);
-            if p.exists() {
-                return Self::load_from(p);
-            }
+    /// Returns [`ConfigError::IoError`] if the specified or found file cannot be read.
+    /// Returns [`ConfigError::ParseError`] if the file is not valid TOML.
+    /// Returns [`ConfigError::NotFound`] if no config file is found in the default locations.
+    pub fn load(path: Option<&Path>) -> Result<Self, ConfigError> {
+        // 1. Explicit path (highest priority) — delegate directly; IoError covers missing file.
+        if let Some(p) = path {
+            return Self::load_from(p);
         }
 
         // 2. Local directory
@@ -229,8 +229,7 @@ impl Config {
             }
         }
 
-        // No config file found, return defaults
-        Ok(Self::default())
+        Err(ConfigError::NotFound)
     }
 
     /// Load configuration from a specific path.
