@@ -114,9 +114,10 @@ Tool call detection and MCP execution happen inside `Agent::complete()` synchron
 ### Config Loading
 
 Priority (highest first):
-1. `$SYNAPSE_CONFIG` env var path
+1. `--config <path>` CLI flag (error if file missing)
 2. `./config.toml` (local directory)
 3. `~/.config/synapse/config.toml` (user default)
+4. Error — no silent defaults; exits with a clear message
 
 `Config` top-level fields: `provider`, `api_key`, `model`, `system_prompt: Option<String>` (injected on-the-fly, never stored in DB), `system_prompt_file: Option<String>` (path to external prompt file; inline `system_prompt` wins if both set), `session`, `mcp`, `telegram`, `logging: Option<LoggingConfig>`. `TelegramConfig` lives in `synapse-core/src/config.rs`. Bot token resolution: `TELEGRAM_BOT_TOKEN` env var > `telegram.token` in config. Empty `allowed_users` rejects all users (secure by default). `LoggingConfig` fields: `directory` (default `"logs"`), `max_files` (default `7`), `rotation` (`"daily"` / `"hourly"` / `"never"`, default `"daily"`); omitting `[logging]` keeps stdout-only behavior.
 

@@ -4,6 +4,8 @@
 //! and the [`handle_command`] dispatcher that executes session list, show,
 //! and delete operations.
 
+use std::path::Path;
+
 use anyhow::{Context, Result, bail};
 use clap::Subcommand;
 use uuid::Uuid;
@@ -38,8 +40,8 @@ pub(crate) enum SessionAction {
 }
 
 /// Handle session management subcommands.
-pub(crate) async fn handle_command(command: Commands) -> Result<()> {
-    let config = Config::load().unwrap_or_default();
+pub(crate) async fn handle_command(command: Commands, config_path: Option<&Path>) -> Result<()> {
+    let config = Config::load(config_path)?;
     let session_config = config.session.unwrap_or_default();
     let storage = create_storage(session_config.database_url.as_deref())
         .await

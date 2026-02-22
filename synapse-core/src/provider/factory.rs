@@ -38,7 +38,7 @@ const OPENAI_API_KEY_ENV: &str = "OPENAI_API_KEY";
 /// use synapse_core::provider::create_provider;
 ///
 /// # fn example() -> Result<(), Box<dyn std::error::Error>> {
-/// let config = Config::load()?;
+/// let config = Config::load(None)?;
 /// let provider = create_provider(&config)?;
 /// # Ok(())
 /// # }

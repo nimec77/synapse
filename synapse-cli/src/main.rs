@@ -4,6 +4,7 @@ mod commands;
 mod repl;
 
 use std::io::{self, IsTerminal, Read, Write};
+use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -36,6 +37,10 @@ struct Args {
     #[arg(short = 'p', long)]
     provider: Option<String>,
 
+    /// Path to a custom config file (overrides default search locations)
+    #[arg(short = 'c', long)]
+    config: Option<PathBuf>,
+
     /// Session management commands
     #[command(subcommand)]
     command: Option<Commands>,
@@ -48,7 +53,7 @@ async fn main() -> Result<()> {
         .init();
 
     let args = Args::parse();
-    let mut config = Config::load().unwrap_or_default();
+    let mut config = Config::load(args.config.as_deref())?;
 
     // Apply provider override from CLI flag
     if let Some(ref provider) = args.provider {
@@ -57,7 +62,7 @@ async fn main() -> Result<()> {
 
     // Handle subcommands
     if let Some(command) = args.command {
-        return handle_command(command).await;
+        return handle_command(command, args.config.as_deref()).await;
     }
 
     // Handle REPL mode

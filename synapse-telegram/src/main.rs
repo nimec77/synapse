@@ -7,15 +7,26 @@
 mod handlers;
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::Context;
+use clap::Parser;
 use handlers::ChatSessionMap;
 use synapse_core::{Agent, Config, SessionStore, SessionSummary, create_storage, init_mcp_client};
 use teloxide::prelude::*;
 use tokio::sync::RwLock;
 use tracing_subscriber::prelude::*;
 use uuid::Uuid;
+
+/// Synapse Telegram Bot — AI agent Telegram interface
+#[derive(Parser)]
+#[command(name = "synapse-telegram")]
+struct Args {
+    /// Path to a custom config file (overrides default search locations)
+    #[arg(short = 'c', long)]
+    config: Option<PathBuf>,
+}
 
 /// Default tracing directive enabling info-level logs for this crate.
 const DEFAULT_TRACING_DIRECTIVE: &str = "synapse_telegram=info";
@@ -101,11 +112,10 @@ fn init_tracing(
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let args = Args::parse();
+
     // 1. Load application configuration FIRST (tracing init depends on config).
-    let config = Config::load().unwrap_or_else(|e| {
-        eprintln!("Warning: Failed to load config, using defaults: {}", e);
-        Config::default()
-    });
+    let config = Config::load(args.config.as_deref()).context("Failed to load config")?;
 
     // 2. Initialize tracing (stdout-only or stdout+file based on config).
     let _guard = init_tracing(&config)?;
