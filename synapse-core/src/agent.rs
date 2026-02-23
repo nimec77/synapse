@@ -134,11 +134,36 @@ impl Agent {
     ///
     /// Creates a new `Vec<Message>` each time. The caller's original messages are
     /// never mutated with the system message.
-    fn build_messages(&self, messages: &[Message]) -> Vec<Message> {
-        match &self.system_prompt {
-            Some(prompt) => {
+    ///
+    /// When `tools` is non-empty, a tool availability note is appended to the system
+    /// prompt so that providers which ignore the API-level `tools` field (e.g. DeepSeek)
+    /// still receive the list through the system message.
+    fn build_messages(
+        &self,
+        messages: &[Message],
+        tools: &[crate::mcp::ToolDefinition],
+    ) -> Vec<Message> {
+        let tool_note = if tools.is_empty() {
+            None
+        } else {
+            let tool_list: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
+            Some(format!(
+                "\n\nYou have access to external tools: {}. Use them when the user's request would benefit from real-time data or external actions.",
+                tool_list.join(", ")
+            ))
+        };
+
+        let system_content = match (&self.system_prompt, &tool_note) {
+            (Some(prompt), Some(note)) => Some(format!("{prompt}{note}")),
+            (Some(prompt), None) => Some(prompt.clone()),
+            (None, Some(note)) => Some(note.trim_start().to_string()),
+            (None, None) => None,
+        };
+
+        match system_content {
+            Some(content) => {
                 let mut result = Vec::with_capacity(messages.len() + 1);
-                result.push(Message::new(crate::message::Role::System, prompt.as_str()));
+                result.push(Message::new(crate::message::Role::System, &content));
                 result.extend_from_slice(messages);
                 result
             }
@@ -161,7 +186,7 @@ impl Agent {
 
         for iteration in 0..MAX_ITERATIONS {
             tracing::debug!(iteration, "agent: starting tool call iteration");
-            let provider_messages = self.build_messages(messages);
+            let provider_messages = self.build_messages(messages, &tools);
             let response = if tools.is_empty() {
                 self.provider.complete(&provider_messages).await?
             } else {
@@ -220,7 +245,7 @@ impl Agent {
         if tools.is_empty() {
             // No tools: direct streaming, no loop needed
             return Box::pin(async_stream::stream! {
-                let provider_messages = self.build_messages(messages);
+                let provider_messages = self.build_messages(messages, &[]);
                 let mut stream = self.provider.stream(&provider_messages);
                 use futures::StreamExt;
                 while let Some(event) = stream.next().await {
@@ -259,7 +284,7 @@ impl Agent {
         if tools.is_empty() {
             // No tools: direct streaming, no loop needed
             return Box::pin(async_stream::stream! {
-                let provider_messages = self.build_messages(&messages);
+                let provider_messages = self.build_messages(&messages, &[]);
                 let mut stream = self.provider.stream(&provider_messages);
                 use futures::StreamExt;
                 while let Some(event) = stream.next().await {
@@ -345,7 +370,7 @@ mod tests {
         let agent = Agent::new(provider, None).with_system_prompt("You are helpful.");
 
         let messages = vec![Message::new(Role::User, "Hi")];
-        let result = agent.build_messages(&messages);
+        let result = agent.build_messages(&messages, &[]);
 
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].role, Role::System);
@@ -360,7 +385,7 @@ mod tests {
         let agent = Agent::new(provider, None);
 
         let messages = vec![Message::new(Role::User, "Hi")];
-        let result = agent.build_messages(&messages);
+        let result = agent.build_messages(&messages, &[]);
 
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].role, Role::User);
@@ -373,7 +398,7 @@ mod tests {
         let agent = Agent::new(provider, None).with_system_prompt("System.");
 
         let messages = vec![Message::new(Role::User, "Hi")];
-        let _result = agent.build_messages(&messages);
+        let _result = agent.build_messages(&messages, &[]);
 
         // Original slice must be unmodified — no system message prepended to it.
         assert_eq!(messages.len(), 1);
@@ -390,7 +415,7 @@ mod tests {
             Message::new(Role::Assistant, "A1"),
             Message::new(Role::User, "Q2"),
         ];
-        let result = agent.build_messages(&messages);
+        let result = agent.build_messages(&messages, &[]);
 
         assert_eq!(result.len(), 4);
         assert_eq!(result[0].role, Role::System);
@@ -401,6 +426,53 @@ mod tests {
         assert_eq!(result[2].content, "A1");
         assert_eq!(result[3].role, Role::User);
         assert_eq!(result[3].content, "Q2");
+    }
+
+    #[test]
+    fn test_build_messages_with_tools_appends_note() {
+        let provider = Box::new(MockProvider::new());
+        let agent = Agent::new(provider, None).with_system_prompt("You are helpful.");
+
+        let messages = vec![Message::new(Role::User, "Hi")];
+        let tools = vec![ToolDefinition {
+            name: "brave_search".to_string(),
+            description: None,
+            input_schema: serde_json::json!({}),
+        }];
+        let result = agent.build_messages(&messages, &tools);
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].role, Role::System);
+        assert!(result[0].content.starts_with("You are helpful."));
+        assert!(result[0].content.contains("brave_search"));
+        assert!(
+            result[0]
+                .content
+                .contains("You have access to external tools")
+        );
+    }
+
+    #[test]
+    fn test_build_messages_tools_only_no_system_prompt() {
+        let provider = Box::new(MockProvider::new());
+        let agent = Agent::new(provider, None);
+
+        let messages = vec![Message::new(Role::User, "Hi")];
+        let tools = vec![ToolDefinition {
+            name: "my_tool".to_string(),
+            description: None,
+            input_schema: serde_json::json!({}),
+        }];
+        let result = agent.build_messages(&messages, &tools);
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].role, Role::System);
+        assert!(result[0].content.contains("my_tool"));
+        assert!(
+            result[0]
+                .content
+                .contains("You have access to external tools")
+        );
     }
 
     #[tokio::test]
