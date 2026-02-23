@@ -4,6 +4,7 @@
 //! SessionStore, and MCP subsystems as the CLI interface. Validates the
 //! hexagonal architecture by proving a second frontend can reuse all core logic.
 
+mod format;
 mod handlers;
 
 use std::collections::HashMap;

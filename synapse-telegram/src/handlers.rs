@@ -11,7 +11,7 @@ use synapse_core::message::{Message as CoreMessage, Role};
 use synapse_core::session::Session;
 use synapse_core::{Agent, Config, SessionStore, StoredMessage};
 use teloxide::prelude::*;
-use teloxide::types::{ChatAction, Message as TgMessage};
+use teloxide::types::{ChatAction, Message as TgMessage, ParseMode};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
@@ -108,10 +108,33 @@ pub async fn handle_message(
                 );
             }
 
-            // Chunk and send the response.
-            let chunks = chunk_message(&response.content);
-            for chunk in chunks {
-                bot.send_message(msg.chat.id, chunk).await?;
+            // Convert Markdown to Telegram HTML, chunk, and send with fallback.
+            let html = crate::format::md_to_telegram_html(&response.content);
+            let chunks = crate::format::chunk_html(&html);
+            let mut html_failed = false;
+            for chunk in &chunks {
+                match bot
+                    .send_message(msg.chat.id, chunk)
+                    .parse_mode(ParseMode::Html)
+                    .await
+                {
+                    Ok(_) => {}
+                    Err(e) => {
+                        tracing::warn!(
+                            "HTML send failed for chat {}, falling back to plain text: {}",
+                            chat_id,
+                            e
+                        );
+                        html_failed = true;
+                        break;
+                    }
+                }
+            }
+            if html_failed {
+                let plain_chunks = chunk_message(&response.content);
+                for plain_chunk in plain_chunks {
+                    bot.send_message(msg.chat.id, plain_chunk).await?;
+                }
             }
         }
         Err(e) => {

@@ -45,7 +45,6 @@ LlmProvider  SessionStore   McpClient
 Anthropic    SqliteStore
 DeepSeek
 OpenAI
-Mock
 ```
 
 **Critical rule:** `synapse-core` never imports from interface crates. Dependencies flow inward only.
@@ -56,7 +55,7 @@ Mock
 
 ```rust
 // Preferred: construct from config (calls create_provider + applies system prompt internally)
-let mcp_client = init_mcp_client(config.mcp.as_ref().map(|m| m.config_path.as_str())).await;
+let mcp_client = init_mcp_client(config.mcp.as_ref().and_then(|m| m.config_path.as_deref())).await;
 let agent = Agent::from_config(&config, mcp_client)?;
 
 // Low-level: manual construction
@@ -64,11 +63,11 @@ let agent = Agent::new(provider, mcp_client)
     .with_system_prompt("You are a helpful assistant.");
 
 agent.complete(&mut messages).await?;   // blocking, handles tool call loop
-agent.stream(&messages)                 // streaming, no tools
+agent.stream(&mut messages)             // streaming, tool-aware
 agent.stream_owned(messages)            // streaming, takes ownership
 ```
 
-`build_messages()` is a private helper that prepends `Role::System` on-the-fly before every provider call without mutating or storing the system message in the session database. The tool call loop runs up to `MAX_ITERATIONS = 10`.
+`build_messages(&self, messages, tools)` is a private helper that prepends `Role::System` on-the-fly before every provider call without mutating or storing the system message in the session database. When `tools` is non-empty it appends an `## Available Tools` section to the system prompt so that providers which ignore the API-level `tools` field (e.g. DeepSeek) still see the tool list. The tool call loop runs up to `MAX_ITERATIONS = 10`.
 
 ### Core Traits
 
@@ -79,6 +78,27 @@ pub trait LlmProvider: Send + Sync {
     async fn complete(&self, messages: &[Message]) -> Result<Message, ProviderError>;
     fn stream(&self, messages: &[Message])
         -> Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send + '_>>;
+
+    // Default: delegates to complete(), ignoring tools.
+    // Anthropic, DeepSeek, and OpenAI override this to pass tools via the API.
+    async fn complete_with_tools(&self, messages: &[Message], tools: &[ToolDefinition])
+        -> Result<Message, ProviderError>;
+
+    // Default: delegates to stream(), ignoring tools.
+    fn stream_with_tools(&self, messages: &[Message], tools: &[ToolDefinition])
+        -> Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send + '_>>;
+}
+```
+
+**Message** (`synapse-core/src/message.rs`) — conversation message:
+```rust
+pub struct Message {
+    pub role: Role,
+    pub content: String,
+    /// Tool calls requested by the assistant (Some when role == Assistant and model invoked tools).
+    pub tool_calls: Option<Vec<ToolCallData>>,
+    /// Tool call ID this message responds to (Some when role == Tool).
+    pub tool_call_id: Option<String>,
 }
 ```
 
@@ -103,11 +123,11 @@ Providers return `Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> 
 - `TextDelta(String)` — token fragment
 - `Done` — stream complete
 
-Tool call detection and MCP execution happen inside `Agent::complete()` synchronously; streaming (`Agent::stream`) does not handle tools. CLI consumes streams with `tokio::select!` for Ctrl+C handling. Uses `async_stream::stream!` macro and `eventsource-stream` for SSE parsing.
+`Agent::stream()` and `Agent::stream_owned()` yield `Result<StreamEvent, AgentError>` (not `ProviderError`). When tools are available, they resolve tool call iterations internally via `complete()` and stream only the final text response. When no tools are configured, they delegate directly to the provider's `stream()`. CLI consumes streams with `tokio::select!` for Ctrl+C handling. Uses `async_stream::stream!` macro and `eventsource-stream` for SSE parsing. OpenAI-compatible providers (Anthropic, DeepSeek, OpenAI) set `tool_choice: "auto"` in the API request when tools are present.
 
 ### Provider Factory
 
-`create_provider(config) -> Box<dyn LlmProvider>` in `provider/factory.rs`. API key resolution: **env var > config file** (e.g., `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`). Provider selection by `config.provider` string: `"deepseek"`, `"anthropic"`, `"openai"`, `"mock"`.
+`create_provider(config) -> Box<dyn LlmProvider>` in `provider/factory.rs`. API key resolution: **env var > config file** (e.g., `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`). Provider selection by `config.provider` string: `"deepseek"`, `"anthropic"`, `"openai"`. `MockProvider` is test-only and not available through `create_provider()`.
 
 **Adding a new OpenAI-compatible provider:** use `provider/openai_compat.rs` as the shared base (serde types, `build_api_messages`, `complete_request`, `stream_sse`, `SSE_DONE_MARKER`). See `deepseek.rs` and `openai.rs` for thin-wrapper examples (~70 lines each).
 
@@ -129,9 +149,9 @@ SQLite via `sqlx` with WAL mode, connection pooling (max 5), automatic migration
 
 Four `thiserror` enums in `synapse-core`:
 - **`AgentError`** (`agent.rs`): `Provider(ProviderError)`, `Mcp(McpError)`, `MaxIterationsExceeded`
-- **`ProviderError`** (`provider.rs`): `RequestFailed`, `AuthenticationError`, `MissingApiKey`, `UnknownProvider`
+- **`ProviderError`** (`provider.rs`): `ProviderError { message }`, `RequestFailed`, `AuthenticationError`, `MissingApiKey`, `UnknownProvider`
 - **`StorageError`** (`storage.rs`): `Database`, `NotFound(Uuid)`, `Migration`, `InvalidData`
-- **`ConfigError`** (`config.rs`): `IoError`, `ParseError`
+- **`ConfigError`** (`config.rs`): `IoError`, `ParseError`, `NotFound`
 
 Interface crates use `anyhow` and `.context()` for error wrapping.
 
@@ -163,7 +183,7 @@ src/
 | Crate | Purpose |
 |-------|---------|
 | `synapse-core` | Core library: agent orchestrator, config, providers, storage, MCP, message types |
-| `synapse-cli` | CLI binary: one-shot, stdin, and session modes via `clap`; REPL split into `repl/app.rs`, `repl/render.rs`, `repl/input.rs`; session commands in `commands.rs` |
+| `synapse-cli` | CLI binary: one-shot, stdin, and session modes via `clap`; `-p`/`--provider` flag overrides config provider; REPL split into `repl/app.rs`, `repl/render.rs`, `repl/input.rs`; session commands in `commands.rs` |
 | `synapse-telegram` | Telegram bot interface: teloxide long-polling, session-per-chat, user allowlist |
 
 ## CI/CD
@@ -181,8 +201,8 @@ GitHub Actions on push to `master`/`feature/*` and PRs to `master`:
 - **Database**: `sqlx` with `runtime-tokio` + `sqlite` features
 - **CLI**: `clap` for args, `ratatui` + `crossterm` for REPL UI
 - **MCP**: `rmcp` for Model Context Protocol
-- **Telegram**: `teloxide` 0.13 with `macros` feature, dptree dependency injection
-- **Tracing**: `tracing` 0.1 in `synapse-core` and `synapse-cli` (structured spans/events); `tracing-appender` 0.2 with non-blocking rolling-file writer in Telegram only. CLI initialises a `tracing-subscriber` env-filter subscriber in `main.rs`.
+- **Telegram**: `teloxide` 0.17 with `macros` feature, dptree dependency injection
+- **Tracing**: `tracing` 0.1 in `synapse-core` and `synapse-cli` (structured spans/events); `tracing-appender` 0.2 with non-blocking rolling-file writer in Telegram only. CLI uses plain `EnvFilter::from_default_env()`. Telegram bot always enables `synapse_telegram=info` and `synapse_core=info` on top of `RUST_LOG` via `DEFAULT_DIRECTIVES`.
 - **IDs**: `uuid` v4/v7
 
 ## Documentation
