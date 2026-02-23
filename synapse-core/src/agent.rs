@@ -146,10 +146,20 @@ impl Agent {
         let tool_note = if tools.is_empty() {
             None
         } else {
-            let tool_list: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
+            let tool_list: String = tools
+                .iter()
+                .map(|t| match &t.description {
+                    Some(desc) => format!("- {}: {}", t.name, desc),
+                    None => format!("- {}", t.name),
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
             Some(format!(
-                "\n\nYou have access to external tools: {}. Use them when the user's request would benefit from real-time data or external actions.",
-                tool_list.join(", ")
+                "\n\n## Available Tools\n\
+                 You are running inside an agent orchestrator that executes tool calls on your behalf. \
+                 When you invoke a function call, the orchestrator handles execution and returns the result to you. \
+                 Do not claim you lack tool access.\n\n\
+                 {tool_list}"
             ))
         };
 
@@ -445,11 +455,8 @@ mod tests {
         assert_eq!(result[0].role, Role::System);
         assert!(result[0].content.starts_with("You are helpful."));
         assert!(result[0].content.contains("brave_search"));
-        assert!(
-            result[0]
-                .content
-                .contains("You have access to external tools")
-        );
+        assert!(result[0].content.contains("Available Tools"));
+        assert!(result[0].content.contains("orchestrator"));
     }
 
     #[test]
@@ -468,11 +475,8 @@ mod tests {
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].role, Role::System);
         assert!(result[0].content.contains("my_tool"));
-        assert!(
-            result[0]
-                .content
-                .contains("You have access to external tools")
-        );
+        assert!(result[0].content.contains("Available Tools"));
+        assert!(result[0].content.contains("orchestrator"));
     }
 
     #[tokio::test]

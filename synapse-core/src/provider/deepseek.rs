@@ -71,6 +71,7 @@ impl LlmProvider for DeepSeekProvider {
             messages: api_messages,
             max_tokens: DEFAULT_MAX_TOKENS,
             tools: None,
+            tool_choice: None,
         };
         openai_compat::complete_request(&self.client, API_ENDPOINT, &self.api_key, &request).await
     }
@@ -86,6 +87,11 @@ impl LlmProvider for DeepSeekProvider {
             messages: api_messages,
             max_tokens: DEFAULT_MAX_TOKENS,
             tools: openai_compat::to_oai_tools(tools),
+            tool_choice: if tools.is_empty() {
+                None
+            } else {
+                Some("auto".to_string())
+            },
         };
         openai_compat::complete_request(&self.client, API_ENDPOINT, &self.api_key, &request).await
     }

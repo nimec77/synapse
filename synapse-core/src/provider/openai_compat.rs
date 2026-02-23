@@ -54,6 +54,10 @@ pub(super) struct ApiRequest {
     /// Optional tool definitions.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) tools: Option<Vec<OaiTool>>,
+    /// Tool choice strategy: `"auto"`, `"required"`, or `"none"`.
+    /// Omitted when `None` so the API default (`"auto"`) applies implicitly.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) tool_choice: Option<String>,
 }
 
 /// Request body for a streaming Chat Completions API call.
@@ -423,6 +427,7 @@ mod tests {
             }],
             max_tokens: 1024,
             tools: None,
+            tool_choice: None,
         };
 
         let json = serde_json::to_value(&request).unwrap();
@@ -453,6 +458,7 @@ mod tests {
             ],
             max_tokens: 1024,
             tools: None,
+            tool_choice: None,
         };
 
         let json = serde_json::to_value(&request).unwrap();
@@ -631,12 +637,14 @@ mod tests {
             }],
             max_tokens: 1024,
             tools: Some(tools),
+            tool_choice: Some("auto".to_string()),
         };
 
         let json = serde_json::to_value(&request).unwrap();
         assert!(json.get("tools").is_some());
         assert_eq!(json["tools"][0]["type"], "function");
         assert_eq!(json["tools"][0]["function"]["name"], "get_weather");
+        assert_eq!(json["tool_choice"], "auto");
     }
 
     #[test]
@@ -651,10 +659,33 @@ mod tests {
             }],
             max_tokens: 1024,
             tools: None,
+            tool_choice: None,
         };
 
         let json = serde_json::to_value(&request).unwrap();
         assert!(json.get("tools").is_none());
+    }
+
+    #[test]
+    fn test_api_request_tool_choice_absent_without_tools() {
+        let request = ApiRequest {
+            model: "test-model".to_string(),
+            messages: vec![ApiMessage {
+                role: "user".to_string(),
+                content: Some("Hello".to_string()),
+                tool_calls: None,
+                tool_call_id: None,
+            }],
+            max_tokens: 1024,
+            tools: None,
+            tool_choice: None,
+        };
+
+        let json = serde_json::to_value(&request).unwrap();
+        assert!(
+            json.get("tool_choice").is_none(),
+            "tool_choice must be absent when no tools"
+        );
     }
 
     #[test]
