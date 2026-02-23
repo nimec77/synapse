@@ -125,6 +125,17 @@ Providers return `Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> 
 
 `Agent::stream()` and `Agent::stream_owned()` yield `Result<StreamEvent, AgentError>` (not `ProviderError`). When tools are available, they resolve tool call iterations internally via `complete()` and stream only the final text response. When no tools are configured, they delegate directly to the provider's `stream()`. CLI consumes streams with `tokio::select!` for Ctrl+C handling. Uses `async_stream::stream!` macro and `eventsource-stream` for SSE parsing. OpenAI-compatible providers (Anthropic, DeepSeek, OpenAI) set `tool_choice: "auto"` in the API request when tools are present.
 
+### Telegram Message Pipeline
+
+LLM responses are Markdown; Telegram requires HTML or MarkdownV2. HTML is used because it only needs `&`, `<`, `>` escaped — MarkdownV2 requires escaping 18+ characters and is fragile for LLM output.
+
+`synapse-telegram/src/format.rs` provides:
+- `md_to_telegram_html(markdown)` — walks `pulldown_cmark::Parser` events and emits Telegram's HTML subset (`<b>`, `<i>`, `<s>`, `<code>`, `<pre>`, `<a>`, `<blockquote>`). Tables → `<pre>` monospace; headings → `<b>`; images → text fallback.
+- `chunk_html(html)` — splits into ≤4096-char chunks with **balanced tags**: closes open tags at each split boundary and reopens them in the next chunk.
+- `escape_html(text)` — escapes `&` `<` `>` only.
+
+In `handlers.rs`, the send loop attempts `ParseMode::Html` first; if Telegram rejects the HTML (e.g. malformed), it falls back to plain-text chunks via `chunk_message()`. `ERROR_REPLY` is always sent as plain text (no parse mode).
+
 ### Provider Factory
 
 `create_provider(config) -> Box<dyn LlmProvider>` in `provider/factory.rs`. API key resolution: **env var > config file** (e.g., `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`). Provider selection by `config.provider` string: `"deepseek"`, `"anthropic"`, `"openai"`. `MockProvider` is test-only and not available through `create_provider()`.
@@ -184,7 +195,7 @@ src/
 |-------|---------|
 | `synapse-core` | Core library: agent orchestrator, config, providers, storage, MCP, message types |
 | `synapse-cli` | CLI binary: one-shot, stdin, and session modes via `clap`; `-p`/`--provider` flag overrides config provider; REPL split into `repl/app.rs`, `repl/render.rs`, `repl/input.rs`; session commands in `commands.rs` |
-| `synapse-telegram` | Telegram bot interface: teloxide long-polling, session-per-chat, user allowlist |
+| `synapse-telegram` | Telegram bot interface: teloxide long-polling, session-per-chat, user allowlist auth, `TelegramConfig`; `format.rs` converts LLM Markdown → Telegram HTML before sending |
 
 ## CI/CD
 
@@ -201,7 +212,7 @@ GitHub Actions on push to `master`/`feature/*` and PRs to `master`:
 - **Database**: `sqlx` with `runtime-tokio` + `sqlite` features
 - **CLI**: `clap` for args, `ratatui` + `crossterm` for REPL UI
 - **MCP**: `rmcp` for Model Context Protocol
-- **Telegram**: `teloxide` 0.17 with `macros` feature, dptree dependency injection
+- **Telegram**: `teloxide` 0.17 with `macros` feature, dptree dependency injection; `pulldown-cmark` 0.13 for Markdown→HTML conversion in `format.rs`
 - **Tracing**: `tracing` 0.1 in `synapse-core` and `synapse-cli` (structured spans/events); `tracing-appender` 0.2 with non-blocking rolling-file writer in Telegram only. CLI uses plain `EnvFilter::from_default_env()`. Telegram bot always enables `synapse_telegram=info` and `synapse_core=info` on top of `RUST_LOG` via `DEFAULT_DIRECTIVES`.
 - **IDs**: `uuid` v4/v7
 

@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **SY-17: Telegram Markdown Formatting** - LLM Markdown responses are now rendered as formatted
+  text in Telegram instead of raw symbols:
+  - `synapse-telegram/src/format.rs` module (new) with three public functions:
+    - `md_to_telegram_html(markdown: &str) -> String` — walks `pulldown_cmark::Parser` events and
+      emits Telegram's HTML subset: `<b>`, `<i>`, `<s>`, `<code>`, `<pre><code>` (with optional
+      `class="language-{lang}"`), `<a href>`, `<blockquote>`; headings → `<b>`; tables →
+      `<pre>` monospace; images → `[image: title](url)` text fallback; task list markers preserved
+      as `[x]`/`[ ]`; HTML entities in raw text escaped via `escape_html()`
+    - `chunk_html(html: &str) -> Vec<String>` — splits HTML into ≤4096-character chunks with
+      **balanced tags**: open tags are closed at each split boundary and reopened at the start of
+      the next chunk; uses a simulate-then-adjust approach so that closing tags appended at the
+      boundary never push a chunk over the limit; split priority: `\n\n` > `\n` > space > hard
+      split; never splits inside an `<...>` tag
+    - `escape_html(text: &str) -> String` — escapes `&` → `&amp;`, `<` → `&lt;`, `>` → `&gt;`
+  - `pulldown-cmark = { version = "0.13", default-features = false }` added to
+    `synapse-telegram/Cargo.toml`
+  - `handlers.rs` send loop updated: attempts `ParseMode::Html` (Telegram HTML mode) for each
+    chunk; on any Telegram rejection falls back to plain-text chunks via the existing
+    `chunk_message()`; `ERROR_REPLY` continues to be sent as plain text (no parse mode)
+  - Design rationale: HTML chosen over MarkdownV2 because HTML only requires escaping 3 characters;
+    MarkdownV2 requires escaping 18+ characters outside entities and is fragile for LLM output
+  - 25 unit tests across all three functions: `escape_html` (4), `md_to_telegram_html` (16),
+    `chunk_html` (5); 249 total tests passing
+
 ### Changed
 
 - **SY-16: Phase 15 Code Refactoring** - Internal quality pass across the entire workspace with zero
