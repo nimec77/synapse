@@ -49,13 +49,19 @@ pub async fn init_mcp_client(config_path: Option<&str>) -> Option<McpClient> {
     match load_mcp_config(config_path) {
         Ok(Some(config)) => match McpClient::new(&config).await {
             Ok(client) if client.has_tools() => Some(client),
-            Ok(_) => None,
+            Ok(_) => {
+                tracing::info!("MCP servers connected but registered no tools — disabling MCP");
+                None
+            }
             Err(e) => {
                 tracing::warn!("MCP initialization failed: {}", e);
                 None
             }
         },
-        Ok(None) => None,
+        Ok(None) => {
+            tracing::info!("No MCP config found — running without tools");
+            None
+        }
         Err(e) => {
             tracing::warn!("MCP config error: {}", e);
             None
