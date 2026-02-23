@@ -29,7 +29,7 @@ struct Args {
 }
 
 /// Default tracing directive enabling info-level logs for this crate.
-const DEFAULT_TRACING_DIRECTIVE: &str = "synapse_telegram=info";
+const DEFAULT_TRACING_DIRECTIVE: &str = "synapse_telegram=info,synapse_core=info";
 
 /// Initialize the tracing subscriber.
 ///
