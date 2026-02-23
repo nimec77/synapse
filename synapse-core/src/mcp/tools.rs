@@ -9,6 +9,7 @@ use std::process::Stdio;
 use rmcp::ServiceExt;
 use rmcp::model::CallToolRequestParams;
 use rmcp::transport::TokioChildProcess;
+use tokio::io::AsyncReadExt;
 
 use super::McpError;
 use super::protocol::{McpConfig, ToolDefinition};
@@ -56,7 +57,11 @@ impl McpClient {
                     tracing::info!(server = %name, tool_count, "mcp: server connected");
                 }
                 Err(e) => {
-                    tracing::warn!("MCP server '{}' failed to start: {}", name, e);
+                    tracing::warn!(
+                        server = %name,
+                        command = %server_config.command,
+                        "MCP server failed to start: {}", e
+                    );
                 }
             }
         }
@@ -86,47 +91,70 @@ impl McpClient {
             cmd.env(key, value);
         }
 
-        // Spawn child process and create transport (stderr suppressed to avoid TUI corruption)
-        let (transport, _stderr) = TokioChildProcess::builder(cmd)
-            .stderr(Stdio::null())
+        // Spawn child process (stderr piped for diagnostics, not inherited/null).
+        let (transport, stderr) = TokioChildProcess::builder(cmd)
+            .stderr(Stdio::piped())
             .spawn()
             .map_err(|e| McpError::ConnectionError {
                 server: name.to_string(),
-                message: format!("failed to spawn process: {}", e),
+                message: format!("failed to spawn '{}': {}", config.command, e),
             })?;
 
-        // Connect via rmcp
-        let client =
-            ().serve(transport)
-                .await
-                .map_err(|e| McpError::ConnectionError {
-                    server: name.to_string(),
-                    message: format!("failed to connect: {}", e),
-                })?;
+        // Drain stderr in background so it doesn't block the child process.
+        let stderr_task = tokio::spawn(async move {
+            let Some(mut handle) = stderr else {
+                return String::new();
+            };
+            let mut buf = String::new();
+            let _ = handle.read_to_string(&mut buf).await;
+            buf
+        });
 
-        // Discover tools
-        let tools_result =
-            client
-                .list_tools(None)
-                .await
-                .map_err(|e| McpError::ConnectionError {
-                    server: name.to_string(),
-                    message: format!("failed to list tools: {}", e),
-                })?;
+        // Handshake + tool discovery — capture result without early return
+        // so we can read stderr on failure.
+        let result: Result<_, McpError> = async {
+            let client =
+                ().serve(transport)
+                    .await
+                    .map_err(|e| McpError::ConnectionError {
+                        server: name.to_string(),
+                        message: format!("failed to connect: {}", e),
+                    })?;
 
-        // Convert to our ToolDefinition format
-        let tools: Vec<ToolDefinition> = tools_result
-            .tools
-            .into_iter()
-            .map(|t| ToolDefinition {
-                name: t.name.to_string(),
-                description: t.description.map(|d| d.to_string()),
-                input_schema: serde_json::to_value(&t.input_schema)
-                    .unwrap_or(serde_json::json!({})),
-            })
-            .collect();
+            let tools_result =
+                client
+                    .list_tools(None)
+                    .await
+                    .map_err(|e| McpError::ConnectionError {
+                        server: name.to_string(),
+                        message: format!("failed to list tools: {}", e),
+                    })?;
 
-        Ok((client, tools))
+            // Convert to our ToolDefinition format
+            let tools: Vec<ToolDefinition> = tools_result
+                .tools
+                .into_iter()
+                .map(|t| ToolDefinition {
+                    name: t.name.to_string(),
+                    description: t.description.map(|d| d.to_string()),
+                    input_schema: serde_json::to_value(&t.input_schema)
+                        .unwrap_or(serde_json::json!({})),
+                })
+                .collect();
+
+            Ok((client, tools))
+        }
+        .await;
+
+        // On failure, log server stderr for diagnostics.
+        if result.is_err()
+            && let Ok(output) = stderr_task.await
+            && !output.is_empty()
+        {
+            tracing::warn!(server = %name, "server stderr:\n{}", output.trim());
+        }
+
+        result
     }
 
     /// Create an MCP client with no servers (for testing).
