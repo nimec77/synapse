@@ -28,8 +28,17 @@ struct Args {
     config: Option<PathBuf>,
 }
 
-/// Default tracing directive enabling info-level logs for this crate.
-const DEFAULT_TRACING_DIRECTIVE: &str = "synapse_telegram=info,synapse_core=info";
+/// Default tracing directives enabling info-level logs for this crate and synapse-core.
+const DEFAULT_DIRECTIVES: &[&str] = &["synapse_telegram=info", "synapse_core=info"];
+
+/// Build the default `EnvFilter`: RUST_LOG (if set) plus our default directives.
+fn default_env_filter() -> anyhow::Result<tracing_subscriber::EnvFilter> {
+    let mut filter = tracing_subscriber::EnvFilter::from_default_env();
+    for directive in DEFAULT_DIRECTIVES {
+        filter = filter.add_directive(directive.parse()?);
+    }
+    Ok(filter)
+}
 
 /// Initialize the tracing subscriber.
 ///
@@ -48,10 +57,7 @@ fn init_tracing(
                 lc.directory, e
             );
             tracing_subscriber::fmt()
-                .with_env_filter(
-                    tracing_subscriber::EnvFilter::from_default_env()
-                        .add_directive(DEFAULT_TRACING_DIRECTIVE.parse()?),
-                )
+                .with_env_filter(default_env_filter()?)
                 .init();
             return Ok(None);
         }
@@ -82,8 +88,7 @@ fn init_tracing(
         // Wrap in a non-blocking writer; guard must be kept alive for the process lifetime.
         let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
 
-        let env_filter = tracing_subscriber::EnvFilter::from_default_env()
-            .add_directive(DEFAULT_TRACING_DIRECTIVE.parse()?);
+        let env_filter = default_env_filter()?;
 
         let stdout_layer = tracing_subscriber::fmt::layer();
 
@@ -101,10 +106,7 @@ fn init_tracing(
     } else {
         // No [logging] section — preserve current stdout-only behavior exactly.
         tracing_subscriber::fmt()
-            .with_env_filter(
-                tracing_subscriber::EnvFilter::from_default_env()
-                    .add_directive(DEFAULT_TRACING_DIRECTIVE.parse()?),
-            )
+            .with_env_filter(default_env_filter()?)
             .init();
         Ok(None)
     }
