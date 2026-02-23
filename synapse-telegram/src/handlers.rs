@@ -199,7 +199,8 @@ pub fn chunk_message(text: &str) -> Vec<&str> {
     let mut remaining = text;
 
     while remaining.len() > TELEGRAM_MSG_LIMIT {
-        let slice = &remaining[..TELEGRAM_MSG_LIMIT];
+        let limit = crate::format::floor_char_boundary(remaining, TELEGRAM_MSG_LIMIT);
+        let slice = &remaining[..limit];
 
         // Try paragraph boundary.
         let split_at = slice
@@ -287,6 +288,19 @@ mod tests {
         assert!(chunks.len() >= 2);
         for chunk in &chunks {
             assert!(chunk.len() <= TELEGRAM_MSG_LIMIT);
+        }
+    }
+
+    #[test]
+    fn test_chunk_message_multibyte() {
+        // Cyrillic: 2 bytes per char → 4096 byte limit lands mid-char without the fix.
+        let text = "Привет мир ".repeat(400); // ~4400 chars, ~8800 bytes
+        let chunks = chunk_message(&text);
+        assert!(chunks.len() >= 2);
+        for chunk in chunks {
+            assert!(chunk.len() <= TELEGRAM_MSG_LIMIT);
+            // Panics on invalid UTF-8 boundary — this is the regression guard.
+            let _ = chunk.chars().count();
         }
     }
 }

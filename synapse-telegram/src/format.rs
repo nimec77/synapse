@@ -289,7 +289,7 @@ pub fn chunk_html(html: &str) -> Vec<String> {
             continue;
         }
 
-        let slice_len = max_content.min(remaining.len());
+        let slice_len = floor_char_boundary(remaining, max_content.min(remaining.len()));
         let mut split_at = find_split_point(&remaining[..slice_len]);
 
         // Simulate the tag state after this chunk to know the actual closing size.
@@ -332,7 +332,7 @@ pub fn chunk_html(html: &str) -> Vec<String> {
 }
 
 /// Round `idx` down to the nearest valid UTF-8 character boundary in `s`.
-fn floor_char_boundary(s: &str, idx: usize) -> usize {
+pub(crate) fn floor_char_boundary(s: &str, idx: usize) -> usize {
     if idx >= s.len() {
         return s.len();
     }
@@ -373,15 +373,17 @@ fn find_split_point(slice: &str) -> usize {
 }
 
 fn rfind_not_in_tag(slice: &str, pat: &str, not_in_tag: impl Fn(usize) -> bool) -> Option<usize> {
-    let mut pos = slice.len().saturating_sub(pat.len());
-    while let Some(found) = slice[..=pos].rfind(pat) {
+    // Use an exclusive `end` so slice[..end] is always a valid UTF-8 boundary.
+    // `pat` is ASCII, so positions returned by `rfind` are always char boundaries.
+    let mut end = slice.len();
+    while let Some(found) = slice[..end].rfind(pat) {
         if not_in_tag(found) {
             return Some(found);
         }
         if found == 0 {
             break;
         }
-        pos = found.saturating_sub(1);
+        end = found; // exclude current match in next search
     }
     None
 }
@@ -671,6 +673,32 @@ mod tests {
         assert!(chunks.len() >= 2);
         for chunk in &chunks {
             assert!(chunk.len() <= TELEGRAM_MSG_LIMIT);
+        }
+    }
+
+    #[test]
+    fn test_chunk_html_multibyte_text() {
+        // Each Cyrillic character is 2 bytes; build ~5000 bytes worth.
+        let cyrillic = "Привет ".repeat(400); // ~2800 chars, ~5600 bytes
+        let chunks = chunk_html(&cyrillic);
+        // Must not panic and every chunk must be valid UTF-8 within the byte limit.
+        for chunk in &chunks {
+            assert!(chunk.len() <= TELEGRAM_MSG_LIMIT);
+            // Verify it's valid UTF-8 (would panic on invalid slice otherwise).
+            let _ = chunk.chars().count();
+        }
+    }
+
+    #[test]
+    fn test_chunk_html_emoji_boundary() {
+        // Each emoji is 4 bytes. Fill to just over the limit so the split lands
+        // inside an emoji if boundaries are not respected.
+        let emoji = "😀".repeat(1025); // 4100 bytes
+        let chunks = chunk_html(&emoji);
+        assert!(chunks.len() >= 2);
+        for chunk in &chunks {
+            assert!(chunk.len() <= TELEGRAM_MSG_LIMIT);
+            let _ = chunk.chars().count(); // panics if invalid UTF-8 slice
         }
     }
 }
