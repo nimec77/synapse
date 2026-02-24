@@ -150,7 +150,7 @@ Priority (highest first):
 3. `~/.config/synapse/config.toml` (user default)
 4. Error — no silent defaults; exits with a clear message
 
-`Config` top-level fields: `provider`, `api_key`, `model`, `system_prompt: Option<String>` (injected on-the-fly, never stored in DB), `system_prompt_file: Option<String>` (path to external prompt file; inline `system_prompt` wins if both set), `session`, `mcp`, `telegram`, `logging: Option<LoggingConfig>`. `TelegramConfig` lives in `synapse-core/src/config.rs`. Bot token resolution: `TELEGRAM_BOT_TOKEN` env var > `telegram.token` in config. Empty `allowed_users` rejects all users (secure by default). `LoggingConfig` fields: `directory` (default `"logs"`), `max_files` (default `7`), `rotation` (`"daily"` / `"hourly"` / `"never"`, default `"daily"`); omitting `[logging]` keeps stdout-only behavior.
+`Config` top-level fields: `provider`, `api_key`, `model`, `max_tokens: Option<u32>` (default `4096` when absent; passed to every provider call), `system_prompt: Option<String>` (injected on-the-fly, never stored in DB), `system_prompt_file: Option<String>` (path to external prompt file; inline `system_prompt` wins if both set), `session`, `mcp`, `telegram`, `logging: Option<LoggingConfig>`. `TelegramConfig` lives in `synapse-core/src/config.rs`. Bot token resolution: `TELEGRAM_BOT_TOKEN` env var > `telegram.token` in config. Empty `allowed_users` rejects all users (secure by default). `LoggingConfig` fields: `directory` (default `"logs"`), `max_files` (default `7`), `rotation` (`"daily"` / `"hourly"` / `"never"`, default `"daily"`); omitting `[logging]` keeps stdout-only behavior.
 
 ### Storage
 
@@ -264,3 +264,4 @@ Ticket artifacts live in: `docs/prd/`, `docs/research/`, `docs/plan/`, `docs/tas
 | SY-14 | System Prompt | `system_prompt` in Config and Agent, `build_messages()` on-the-fly injection |
 | SY-15 | File Logging | `LoggingConfig` in core, `tracing-appender` layered subscriber in Telegram bot |
 | SY-16 | Code Refactoring | Dead code removal, `openai_compat.rs` shared base, magic-string constants, structured tracing, `Agent::from_config()`, `init_mcp_client()` in core, REPL file split, API surface tightened |
+| SY-17 | Telegram Markdown Formatting | `format.rs` with `md_to_telegram_html` + `chunk_html`; HTML parse mode with plain-text fallback in handlers |

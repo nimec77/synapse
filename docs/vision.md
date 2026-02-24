@@ -233,8 +233,9 @@ synapse/
 │ default_provider    │       │ command: String     │
 │ providers: Map      │       │ args: Vec<String>   │
 │ system_prompt       │       │ env: Map<String,    │
-│ session_db_path     │       │      String>        │
-└─────────────────────┘       └─────────────────────┘
+│ max_tokens: u32     │       │      String>        │
+│ session_db_path     │       └─────────────────────┘
+└─────────────────────┘
 
 ┌─────────────────────┐
 │   McpConfig         │

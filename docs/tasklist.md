@@ -31,11 +31,12 @@
 | 14. File Logging | ✅ Complete | 5/5 |
 | 15. Code Refactoring | ✅ Complete | 7/7 |
 | 16. Telegram Markdown Formatting (SY-17) | ✅ Complete | 4/4 |
+| 17. Configurable max_tokens (SY-18) | ✅ Complete | 4/4 |
 
 **Legend:** ⬜ Not Started | 🔄 In Progress | ✅ Complete | ⏸️ Blocked
 
-**Current Phase:** 16
-**Last Updated:** 2026-02-23
+**Current Phase:** 17
+**Last Updated:** 2026-02-24
 
 ---
 
@@ -304,6 +305,19 @@ configured directory with correct rotation and file count limits.
 - HTML chosen over MarkdownV2: HTML escapes 3 chars; MarkdownV2 escapes 18+ (fragile for LLM output)
 - `chunk_html` uses simulate-then-adjust: computes closing tags after candidate split, reduces split point by the excess if over 4096 chars, ensuring balanced tags never push chunks over the limit
 - `ERROR_REPLY` always sent as plain text (no parse mode) to avoid formatting errors on error paths
+
+---
+
+## Phase 17: Configurable max_tokens (SY-18)
+
+**Goal:** Allow `max_tokens` to be set in `config.toml` with a sensible default of 4096 so long LLM responses are no longer silently truncated.
+
+- [x] 17.1 Add `max_tokens: Option<u32>` to `Config` struct; default to `4096` via `fn default_max_tokens()`
+- [x] 17.2 Pass `max_tokens` through `create_provider()` factory and store in each provider (`AnthropicProvider`, `DeepSeekProvider`, `OpenAIProvider`)
+- [x] 17.3 Use the stored value in every API request (complete, complete_with_tools, stream, stream_with_tools) replacing the hardcoded `1024`
+- [x] 17.4 Update `config.example.toml` with `max_tokens` field and inline comment; add unit test `test_config_default_max_tokens`
+
+**Test:** `cargo test -p synapse-core` green; setting `max_tokens = 8192` in config produces a request body with `"max_tokens": 8192`.
 
 ---
 
