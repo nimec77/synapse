@@ -4,6 +4,7 @@
 //! SessionStore, and MCP subsystems as the CLI interface. Validates the
 //! hexagonal architecture by proving a second frontend can reuse all core logic.
 
+mod commands;
 mod format;
 mod handlers;
 
@@ -13,12 +14,12 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use clap::Parser;
-use handlers::ChatSessionMap;
+use handlers::{ChatSessionMap, ChatSessions};
 use synapse_core::{Agent, Config, SessionStore, SessionSummary, create_storage, init_mcp_client};
 use teloxide::prelude::*;
+use teloxide::utils::command::BotCommands;
 use tokio::sync::RwLock;
 use tracing_subscriber::prelude::*;
-use uuid::Uuid;
 
 /// Synapse Telegram Bot — AI agent Telegram interface
 #[derive(Parser)]
@@ -170,8 +171,10 @@ async fn main() -> anyhow::Result<()> {
 
     // 9. Rebuild chat-to-session map from persisted sessions.
     let initial_map = rebuild_chat_map(storage.as_ref().as_ref()).await;
+    let total_sessions: usize = initial_map.values().map(|cs| cs.sessions.len()).sum();
     tracing::info!(
-        "Restored {} Telegram sessions from storage",
+        "Restored {} Telegram sessions across {} chats from storage",
+        total_sessions,
         initial_map.len()
     );
     let chat_map: ChatSessionMap = Arc::new(RwLock::new(initial_map));
@@ -179,13 +182,28 @@ async fn main() -> anyhow::Result<()> {
     // 10. Wrap shared config in Arc for handler injection.
     let config = Arc::new(config);
 
-    // 11. Set up message handler and Dispatcher with dependency injection.
-    let handler = Update::filter_message().endpoint(handlers::handle_message);
+    // 11. Fetch the bot's own identity (required for filter_command parsing).
+    let me = bot.get_me().await.context("Failed to fetch bot identity")?;
+
+    // 12. Register slash commands with Telegram (for autocomplete UI). Non-fatal on failure.
+    if let Err(e) = bot.set_my_commands(commands::Command::bot_commands()).await {
+        tracing::warn!("Failed to register bot commands: {}", e);
+    }
+
+    // 13. Set up branched handler: commands route separately from regular messages.
+    let handler = Update::filter_message()
+        .branch(
+            dptree::entry()
+                .filter_command::<commands::Command>()
+                .endpoint(commands::handle_command),
+        )
+        .branch(dptree::entry().endpoint(handlers::handle_message));
 
     tracing::info!("Dispatcher ready — polling for updates");
 
     Dispatcher::builder(bot, handler)
         .dependencies(dptree::deps![
+            me,
             Arc::clone(&config),
             Arc::clone(&agent),
             Arc::clone(&storage),
@@ -235,20 +253,36 @@ pub fn resolve_bot_token(config: &Config) -> anyhow::Result<String> {
         })
 }
 
-/// Rebuild the in-memory chat-ID-to-session-UUID map from persisted sessions.
+/// Rebuild the in-memory chat-ID-to-session map from persisted sessions.
 ///
 /// Sessions created by this bot follow the naming convention `"tg:<chat_id>"`.
-/// Any session without this prefix is ignored.
-pub async fn rebuild_chat_map(storage: &dyn SessionStore) -> HashMap<i64, Uuid> {
+/// Any session without this prefix is ignored. `list_sessions()` returns sessions
+/// ordered by `updated_at DESC`, so the first UUID encountered per chat is the
+/// most recently updated and becomes the active session (index 0).
+pub async fn rebuild_chat_map(storage: &dyn SessionStore) -> HashMap<i64, ChatSessions> {
     let sessions: Vec<SessionSummary> = storage.list_sessions().await.unwrap_or_default();
-    sessions
-        .into_iter()
-        .filter_map(|s| {
-            s.name
-                .as_deref()
-                .and_then(|n| n.strip_prefix("tg:"))
-                .and_then(|id_str| id_str.parse::<i64>().ok())
-                .map(|chat_id| (chat_id, s.id))
+    let mut map: HashMap<i64, Vec<uuid::Uuid>> = HashMap::new();
+
+    for s in &sessions {
+        if let Some(chat_id) = s
+            .name
+            .as_deref()
+            .and_then(|n| n.strip_prefix("tg:"))
+            .and_then(|id_str| id_str.parse::<i64>().ok())
+        {
+            map.entry(chat_id).or_default().push(s.id);
+        }
+    }
+
+    map.into_iter()
+        .map(|(chat_id, session_ids)| {
+            (
+                chat_id,
+                ChatSessions {
+                    sessions: session_ids,
+                    active_idx: 0,
+                },
+            )
         })
         .collect()
 }
@@ -264,6 +298,7 @@ mod tests {
     use synapse_core::session::{Session, StoredMessage};
     use synapse_core::storage::{CleanupResult, SessionStore, StorageError};
     use synapse_core::{Config, TelegramConfig};
+    use uuid::Uuid;
 
     /// Guards tests that mutate environment variables to prevent race conditions.
     static ENV_MUTEX: Mutex<()> = Mutex::new(());
@@ -328,7 +363,7 @@ mod tests {
         let config = Config {
             telegram: Some(TelegramConfig {
                 token: Some("config-token".to_string()),
-                allowed_users: vec![],
+                ..TelegramConfig::default()
             }),
             ..Config::default()
         };
@@ -349,7 +384,7 @@ mod tests {
         let config = Config {
             telegram: Some(TelegramConfig {
                 token: Some("config-token".to_string()),
-                allowed_users: vec![],
+                ..TelegramConfig::default()
             }),
             ..Config::default()
         };
@@ -380,7 +415,7 @@ mod tests {
         let config = Config {
             telegram: Some(TelegramConfig {
                 token: Some("fallback-config-token".to_string()),
-                allowed_users: vec![],
+                ..TelegramConfig::default()
             }),
             ..Config::default()
         };
@@ -435,8 +470,12 @@ mod tests {
         let map = rebuild_chat_map(&store).await;
 
         assert_eq!(map.len(), 2);
-        assert_eq!(map.get(&111222333i64), Some(&id1));
-        assert_eq!(map.get(&444555666i64), Some(&id2));
+        let cs1 = map.get(&111222333i64).unwrap();
+        assert_eq!(cs1.sessions, vec![id1]);
+        assert_eq!(cs1.active_idx, 0);
+        let cs2 = map.get(&444555666i64).unwrap();
+        assert_eq!(cs2.sessions, vec![id2]);
+        assert_eq!(cs2.active_idx, 0);
     }
 
     #[tokio::test]
@@ -482,6 +521,52 @@ mod tests {
 
         // Only the tg: session should be in the map.
         assert_eq!(map.len(), 1);
-        assert_eq!(map.get(&123456789i64), Some(&tg_id));
+        let cs = map.get(&123456789i64).unwrap();
+        assert_eq!(cs.sessions, vec![tg_id]);
+        assert_eq!(cs.active_idx, 0);
+    }
+
+    #[tokio::test]
+    async fn test_rebuild_chat_map_multi_session_per_chat() {
+        let now = Utc::now();
+        let older_time = now - chrono::Duration::hours(1);
+        let newest_id = Uuid::new_v4();
+        let older_id = Uuid::new_v4();
+
+        // DB returns ORDER BY updated_at DESC — most recent first.
+        let sessions = vec![
+            SessionSummary {
+                id: newest_id,
+                name: Some("tg:999888777".to_string()),
+                provider: "deepseek".to_string(),
+                model: "deepseek-chat".to_string(),
+                created_at: older_time,
+                updated_at: now,
+                message_count: 3,
+                preview: None,
+            },
+            SessionSummary {
+                id: older_id,
+                name: Some("tg:999888777".to_string()),
+                provider: "deepseek".to_string(),
+                model: "deepseek-chat".to_string(),
+                created_at: older_time,
+                updated_at: older_time,
+                message_count: 5,
+                preview: None,
+            },
+        ];
+
+        let store = MockSessionStore::with_sessions(sessions);
+        let map = rebuild_chat_map(&store).await;
+
+        // Both sessions should be grouped under the same chat_id.
+        assert_eq!(map.len(), 1);
+        let cs = map.get(&999888777i64).unwrap();
+        assert_eq!(cs.sessions.len(), 2);
+        // Most recently updated session should be first (index 0 = active).
+        assert_eq!(cs.sessions[0], newest_id);
+        assert_eq!(cs.sessions[1], older_id);
+        assert_eq!(cs.active_idx, 0);
     }
 }

@@ -139,7 +139,7 @@ pub struct McpSettings {
 /// Telegram bot configuration.
 ///
 /// Secure by default: an empty `allowed_users` list rejects all users.
-#[derive(Debug, Clone, PartialEq, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct TelegramConfig {
     /// Bot token. Overridden by the `TELEGRAM_BOT_TOKEN` environment variable.
     #[serde(default)]
@@ -148,6 +148,26 @@ pub struct TelegramConfig {
     /// An empty list rejects all users (secure by default).
     #[serde(default)]
     pub allowed_users: Vec<u64>,
+    /// Maximum number of sessions allowed per Telegram chat (default: 10).
+    ///
+    /// When the cap is exceeded during `/new`, the oldest session is automatically
+    /// deleted before the new one is created.
+    #[serde(default = "default_max_sessions_per_chat")]
+    pub max_sessions_per_chat: u32,
+}
+
+fn default_max_sessions_per_chat() -> u32 {
+    10
+}
+
+impl Default for TelegramConfig {
+    fn default() -> Self {
+        Self {
+            token: None,
+            allowed_users: vec![],
+            max_sessions_per_chat: default_max_sessions_per_chat(),
+        }
+    }
 }
 
 /// File-based logging configuration with rotation.
@@ -551,6 +571,27 @@ token = "bot-token-only"
         let tg = TelegramConfig::default();
         assert!(tg.token.is_none());
         assert!(tg.allowed_users.is_empty());
+        assert_eq!(tg.max_sessions_per_chat, 10);
+    }
+
+    #[test]
+    fn test_config_telegram_max_sessions_per_chat() {
+        // Explicit value should be honoured.
+        let toml = r#"
+[telegram]
+max_sessions_per_chat = 5
+"#;
+        let config: Config = toml::from_str(toml).unwrap();
+        let tg = config.telegram.unwrap();
+        assert_eq!(tg.max_sessions_per_chat, 5);
+
+        // Omitting the field should yield the default of 10.
+        let toml_default = r#"
+[telegram]
+"#;
+        let config_default: Config = toml::from_str(toml_default).unwrap();
+        let tg_default = config_default.telegram.unwrap();
+        assert_eq!(tg_default.max_sessions_per_chat, 10);
     }
 
     #[test]

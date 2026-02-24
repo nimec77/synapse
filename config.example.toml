@@ -70,6 +70,11 @@ auto_cleanup = true
 # An empty list (or omitting this field) rejects ALL users (secure by default).
 # To find your Telegram user ID, message @userinfobot on Telegram.
 # allowed_users = [123456789, 987654321]
+#
+# Maximum number of concurrent sessions per Telegram chat (default: 10).
+# When a user runs /new and the cap is reached, the oldest session is automatically
+# deleted before the new one is created.
+# max_sessions_per_chat = 10
 
 # Logging configuration (file-based output with rotation)
 # Omit this section entirely to disable file logging (stdout only).
