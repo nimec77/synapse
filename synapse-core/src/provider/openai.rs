@@ -9,7 +9,7 @@ use std::pin::Pin;
 use async_trait::async_trait;
 use futures::Stream;
 
-use super::openai_compat::{self, DEFAULT_MAX_TOKENS};
+use super::openai_compat;
 use super::{LlmProvider, ProviderError, StreamEvent};
 use crate::mcp::ToolDefinition;
 use crate::message::Message;
@@ -27,15 +27,24 @@ pub struct OpenAiProvider {
     api_key: String,
     /// Model identifier (e.g., "gpt-4o").
     model: String,
+    /// Maximum tokens to generate in API responses.
+    max_tokens: u32,
 }
 
 impl OpenAiProvider {
     /// Create a new OpenAI provider.
-    pub fn new(api_key: impl Into<String>, model: impl Into<String>) -> Self {
+    ///
+    /// # Arguments
+    ///
+    /// * `api_key` - OpenAI API key
+    /// * `model` - Model identifier (e.g., "gpt-4o")
+    /// * `max_tokens` - Maximum tokens to generate in API responses
+    pub fn new(api_key: impl Into<String>, model: impl Into<String>, max_tokens: u32) -> Self {
         Self {
             client: reqwest::Client::new(),
             api_key: api_key.into(),
             model: model.into(),
+            max_tokens,
         }
     }
 }
@@ -47,7 +56,7 @@ impl LlmProvider for OpenAiProvider {
         let request = openai_compat::ApiRequest {
             model: self.model.clone(),
             messages: api_messages,
-            max_tokens: DEFAULT_MAX_TOKENS,
+            max_tokens: self.max_tokens,
             tools: None,
             tool_choice: None,
         };
@@ -63,7 +72,7 @@ impl LlmProvider for OpenAiProvider {
         let request = openai_compat::ApiRequest {
             model: self.model.clone(),
             messages: api_messages,
-            max_tokens: DEFAULT_MAX_TOKENS,
+            max_tokens: self.max_tokens,
             tools: openai_compat::to_oai_tools(tools),
             tool_choice: if tools.is_empty() {
                 None
@@ -84,7 +93,7 @@ impl LlmProvider for OpenAiProvider {
             self.api_key.clone(),
             self.model.clone(),
             messages.to_vec(),
-            DEFAULT_MAX_TOKENS,
+            self.max_tokens,
         )
     }
 }
@@ -95,8 +104,9 @@ mod tests {
 
     #[test]
     fn test_openai_provider_new() {
-        let provider = OpenAiProvider::new("test-key", "test-model");
+        let provider = OpenAiProvider::new("test-key", "test-model", 4096);
         assert_eq!(provider.api_key, "test-key");
         assert_eq!(provider.model, "test-model");
+        assert_eq!(provider.max_tokens, 4096);
     }
 }

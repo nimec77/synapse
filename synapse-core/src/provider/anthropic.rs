@@ -13,9 +13,6 @@ use super::{LlmProvider, ProviderError, StreamEvent};
 use crate::mcp::ToolDefinition;
 use crate::message::{Message, Role, ToolCallData};
 
-/// Default max tokens for API responses.
-const DEFAULT_MAX_TOKENS: u32 = 1024;
-
 /// Anthropic API version header value.
 const ANTHROPIC_VERSION: &str = "2023-06-01";
 
@@ -33,7 +30,7 @@ const API_ENDPOINT: &str = "https://api.anthropic.com/v1/messages";
 /// use synapse_core::message::{Message, Role};
 ///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-/// let provider = AnthropicProvider::new("sk-ant-...", "claude-3-5-sonnet-20241022");
+/// let provider = AnthropicProvider::new("sk-ant-...", "claude-3-5-sonnet-20241022", 4096);
 /// let messages = vec![Message::new(Role::User, "Hello, Claude!")];
 ///
 /// let response = provider.complete(&messages).await?;
@@ -48,6 +45,8 @@ pub struct AnthropicProvider {
     api_key: String,
     /// Model identifier (e.g., "claude-3-5-sonnet-20241022").
     model: String,
+    /// Maximum tokens to generate in API responses.
+    max_tokens: u32,
 }
 
 impl AnthropicProvider {
@@ -57,11 +56,13 @@ impl AnthropicProvider {
     ///
     /// * `api_key` - Anthropic API key
     /// * `model` - Model identifier (e.g., "claude-3-5-sonnet-20241022")
-    pub fn new(api_key: impl Into<String>, model: impl Into<String>) -> Self {
+    /// * `max_tokens` - Maximum tokens to generate in API responses
+    pub fn new(api_key: impl Into<String>, model: impl Into<String>, max_tokens: u32) -> Self {
         Self {
             client: reqwest::Client::new(),
             api_key: api_key.into(),
             model: model.into(),
+            max_tokens,
         }
     }
 
@@ -339,7 +340,7 @@ impl LlmProvider for AnthropicProvider {
 
         let request = ApiRequest {
             model: self.model.clone(),
-            max_tokens: DEFAULT_MAX_TOKENS,
+            max_tokens: self.max_tokens,
             messages: api_messages,
             system,
             tools: None,
@@ -373,7 +374,7 @@ impl LlmProvider for AnthropicProvider {
 
         let request = ApiRequest {
             model: self.model.clone(),
-            max_tokens: DEFAULT_MAX_TOKENS,
+            max_tokens: self.max_tokens,
             messages: api_messages,
             system,
             tools: api_tools,
@@ -512,10 +513,11 @@ mod tests {
 
     #[test]
     fn test_anthropic_provider_new() {
-        let provider = AnthropicProvider::new("test-key", "test-model");
+        let provider = AnthropicProvider::new("test-key", "test-model", 4096);
 
         assert_eq!(provider.api_key, "test-key");
         assert_eq!(provider.model, "test-model");
+        assert_eq!(provider.max_tokens, 4096);
     }
 
     #[test]

@@ -65,6 +65,7 @@ let agent = Agent::new(provider, mcp_client)
 agent.complete(&mut messages).await?;   // blocking, handles tool call loop
 agent.stream(&mut messages)             // streaming, tool-aware
 agent.stream_owned(messages)            // streaming, takes ownership
+agent.shutdown().await;                 // graceful MCP connection teardown
 ```
 
 `build_messages(&self, messages, tools)` is a private helper that prepends `Role::System` on-the-fly before every provider call without mutating or storing the system message in the session database. When `tools` is non-empty it appends an `## Available Tools` section to the system prompt so that providers which ignore the API-level `tools` field (e.g. DeepSeek) still see the tool list. The tool call loop runs up to `MAX_ITERATIONS = 10`.
@@ -150,7 +151,7 @@ Priority (highest first):
 3. `~/.config/synapse/config.toml` (user default)
 4. Error — no silent defaults; exits with a clear message
 
-`Config` top-level fields: `provider`, `api_key`, `model`, `max_tokens: Option<u32>` (default `4096` when absent; passed to every provider call), `system_prompt: Option<String>` (injected on-the-fly, never stored in DB), `system_prompt_file: Option<String>` (path to external prompt file; inline `system_prompt` wins if both set), `session`, `mcp`, `telegram`, `logging: Option<LoggingConfig>`. `TelegramConfig` lives in `synapse-core/src/config.rs`. Bot token resolution: `TELEGRAM_BOT_TOKEN` env var > `telegram.token` in config. Empty `allowed_users` rejects all users (secure by default). `LoggingConfig` fields: `directory` (default `"logs"`), `max_files` (default `7`), `rotation` (`"daily"` / `"hourly"` / `"never"`, default `"daily"`); omitting `[logging]` keeps stdout-only behavior.
+`Config` top-level fields: `provider`, `api_key`, `model`, `max_tokens: u32` (serde default `4096` via `default_max_tokens()`; passed to every provider call), `system_prompt: Option<String>` (injected on-the-fly, never stored in DB), `system_prompt_file: Option<String>` (path to external prompt file; inline `system_prompt` wins if both set), `session`, `mcp`, `telegram`, `logging: Option<LoggingConfig>`. `TelegramConfig` lives in `synapse-core/src/config.rs`. Bot token resolution: `TELEGRAM_BOT_TOKEN` env var > `telegram.token` in config. Empty `allowed_users` rejects all users (secure by default). `LoggingConfig` fields: `directory` (default `"logs"`), `max_files` (default `7`), `rotation` (`"daily"` / `"hourly"` / `"never"`, default `"daily"`); omitting `[logging]` keeps stdout-only behavior.
 
 ### Storage
 
@@ -265,3 +266,4 @@ Ticket artifacts live in: `docs/prd/`, `docs/research/`, `docs/plan/`, `docs/tas
 | SY-15 | File Logging | `LoggingConfig` in core, `tracing-appender` layered subscriber in Telegram bot |
 | SY-16 | Code Refactoring | Dead code removal, `openai_compat.rs` shared base, magic-string constants, structured tracing, `Agent::from_config()`, `init_mcp_client()` in core, REPL file split, API surface tightened |
 | SY-17 | Telegram Markdown Formatting | `format.rs` with `md_to_telegram_html` + `chunk_html`; HTML parse mode with plain-text fallback in handlers |
+| SY-18 | Configurable max_tokens | `max_tokens: u32` in `Config` (serde default 4096); propagated through factory to all providers; replaces hardcoded 1024 |

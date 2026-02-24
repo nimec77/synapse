@@ -19,9 +19,6 @@ use crate::message::{Message, Role, ToolCallData};
 /// SSE "[DONE]" marker sent by OpenAI-compatible streaming APIs.
 pub(super) const SSE_DONE_MARKER: &str = "[DONE]";
 
-/// Default maximum tokens for API responses.
-pub(super) const DEFAULT_MAX_TOKENS: u32 = 1024;
-
 // ---------------------------------------------------------------------------
 // Serde types (shared across DeepSeek and OpenAI providers)
 // ---------------------------------------------------------------------------
@@ -774,12 +771,5 @@ mod tests {
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].tool_type, "function");
         assert_eq!(result[0].function.name, "test_tool");
-    }
-
-    // -- DEFAULT_MAX_TOKENS constant --
-
-    #[test]
-    fn test_default_max_tokens() {
-        assert_eq!(DEFAULT_MAX_TOKENS, 1024);
     }
 }
