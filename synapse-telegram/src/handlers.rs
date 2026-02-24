@@ -21,8 +21,28 @@ const TELEGRAM_MSG_LIMIT: usize = 4096;
 /// Error message sent to the user when agent or session operations fail.
 const ERROR_REPLY: &str = "Sorry, I encountered an error. Please try again.";
 
-/// In-memory map from Telegram chat IDs to session UUIDs.
-pub type ChatSessionMap = Arc<RwLock<HashMap<i64, Uuid>>>;
+/// Per-chat session state: ordered list of session UUIDs and the active session index.
+///
+/// Sessions are ordered by `updated_at DESC` (most recent first), matching the
+/// 1-based index used in `/list`, `/switch`, and `/delete` commands.
+#[derive(Debug, Clone)]
+pub struct ChatSessions {
+    /// Session UUIDs belonging to this chat. Insertion order reflects DB ordering
+    /// (most recent first) at bot startup; new sessions are prepended on `/new`.
+    pub sessions: Vec<Uuid>,
+    /// Index into `sessions` indicating the currently active session.
+    pub active_idx: usize,
+}
+
+impl ChatSessions {
+    /// Return the currently active session UUID, or `None` if `sessions` is empty.
+    pub fn active_session_id(&self) -> Option<Uuid> {
+        self.sessions.get(self.active_idx).copied()
+    }
+}
+
+/// In-memory map from Telegram chat IDs to multi-session state.
+pub type ChatSessionMap = Arc<RwLock<HashMap<i64, ChatSessions>>>;
 
 /// Handle an incoming Telegram message.
 ///
@@ -159,7 +179,9 @@ async fn resolve_session(
     // Fast path: check with a read lock.
     {
         let map = chat_map.read().await;
-        if let Some(&id) = map.get(&chat_id) {
+        if let Some(chat_sessions) = map.get(&chat_id)
+            && let Some(id) = chat_sessions.active_session_id()
+        {
             storage.touch_session(id).await.ok();
             return Ok(id);
         }
@@ -176,10 +198,18 @@ async fn resolve_session(
 
     let mut map = chat_map.write().await;
     // Double-check: another task might have inserted while we awaited the write lock.
-    if let Some(&existing_id) = map.get(&chat_id) {
+    if let Some(existing) = map.get(&chat_id)
+        && let Some(existing_id) = existing.active_session_id()
+    {
         return Ok(existing_id);
     }
-    map.insert(chat_id, session.id);
+    map.insert(
+        chat_id,
+        ChatSessions {
+            sessions: vec![session.id],
+            active_idx: 0,
+        },
+    );
     Ok(session.id)
 }
 
