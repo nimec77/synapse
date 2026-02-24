@@ -9,7 +9,7 @@ use std::pin::Pin;
 use async_trait::async_trait;
 use futures::Stream;
 
-use super::openai_compat::{self, DEFAULT_MAX_TOKENS};
+use super::openai_compat;
 use super::{LlmProvider, ProviderError, StreamEvent};
 use crate::mcp::ToolDefinition;
 use crate::message::Message;
@@ -29,7 +29,7 @@ const API_ENDPOINT: &str = "https://api.deepseek.com/chat/completions";
 /// use synapse_core::message::{Message, Role};
 ///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-/// let provider = DeepSeekProvider::new("sk-...", "deepseek-chat");
+/// let provider = DeepSeekProvider::new("sk-...", "deepseek-chat", 4096);
 /// let messages = vec![Message::new(Role::User, "Hello, DeepSeek!")];
 ///
 /// let response = provider.complete(&messages).await?;
@@ -44,6 +44,8 @@ pub struct DeepSeekProvider {
     api_key: String,
     /// Model identifier (e.g., "deepseek-chat").
     model: String,
+    /// Maximum tokens to generate in API responses.
+    max_tokens: u32,
 }
 
 impl DeepSeekProvider {
@@ -53,11 +55,13 @@ impl DeepSeekProvider {
     ///
     /// * `api_key` - DeepSeek API key
     /// * `model` - Model identifier (e.g., "deepseek-chat")
-    pub fn new(api_key: impl Into<String>, model: impl Into<String>) -> Self {
+    /// * `max_tokens` - Maximum tokens to generate in API responses
+    pub fn new(api_key: impl Into<String>, model: impl Into<String>, max_tokens: u32) -> Self {
         Self {
             client: reqwest::Client::new(),
             api_key: api_key.into(),
             model: model.into(),
+            max_tokens,
         }
     }
 }
@@ -69,7 +73,7 @@ impl LlmProvider for DeepSeekProvider {
         let request = openai_compat::ApiRequest {
             model: self.model.clone(),
             messages: api_messages,
-            max_tokens: DEFAULT_MAX_TOKENS,
+            max_tokens: self.max_tokens,
             tools: None,
             tool_choice: None,
         };
@@ -85,7 +89,7 @@ impl LlmProvider for DeepSeekProvider {
         let request = openai_compat::ApiRequest {
             model: self.model.clone(),
             messages: api_messages,
-            max_tokens: DEFAULT_MAX_TOKENS,
+            max_tokens: self.max_tokens,
             tools: openai_compat::to_oai_tools(tools),
             tool_choice: if tools.is_empty() {
                 None
@@ -106,7 +110,7 @@ impl LlmProvider for DeepSeekProvider {
             self.api_key.clone(),
             self.model.clone(),
             messages.to_vec(),
-            DEFAULT_MAX_TOKENS,
+            self.max_tokens,
         )
     }
 }
@@ -117,8 +121,9 @@ mod tests {
 
     #[test]
     fn test_deepseek_provider_new() {
-        let provider = DeepSeekProvider::new("test-key", "test-model");
+        let provider = DeepSeekProvider::new("test-key", "test-model", 4096);
         assert_eq!(provider.api_key, "test-key");
         assert_eq!(provider.model, "test-model");
+        assert_eq!(provider.max_tokens, 4096);
     }
 }

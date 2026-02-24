@@ -55,9 +55,21 @@ pub fn create_provider(config: &Config) -> Result<Box<dyn LlmProvider>, Provider
     tracing::info!(provider = %config.provider, model = %config.model, "factory: creating provider");
 
     match config.provider.as_str() {
-        "deepseek" => Ok(Box::new(DeepSeekProvider::new(api_key, &config.model))),
-        "anthropic" => Ok(Box::new(AnthropicProvider::new(api_key, &config.model))),
-        "openai" => Ok(Box::new(OpenAiProvider::new(api_key, &config.model))),
+        "deepseek" => Ok(Box::new(DeepSeekProvider::new(
+            api_key,
+            &config.model,
+            config.max_tokens,
+        ))),
+        "anthropic" => Ok(Box::new(AnthropicProvider::new(
+            api_key,
+            &config.model,
+            config.max_tokens,
+        ))),
+        "openai" => Ok(Box::new(OpenAiProvider::new(
+            api_key,
+            &config.model,
+            config.max_tokens,
+        ))),
         _ => unreachable!("Provider validated above"),
     }
 }
@@ -107,6 +119,7 @@ mod tests {
             provider: provider.to_string(),
             model: "test-model".to_string(),
             api_key: api_key.map(|s| s.to_string()),
+            max_tokens: 4096,
             system_prompt: None,
             system_prompt_file: None,
             session: None,

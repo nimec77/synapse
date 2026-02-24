@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **SY-17: Configurable max_tokens** - Token limit for LLM responses is now user-configurable
+  via `max_tokens` in `config.toml`; default raised from 1024 to 4096 to prevent silent
+  response truncation:
+  - `max_tokens: u32` field added to `Config` in `synapse-core/src/config.rs` with
+    `#[serde(default = "default_max_tokens")]`; default value `4096` applied automatically via
+    serde when the field is absent from `config.toml` — fully backward compatible
+  - `default_max_tokens() -> u32` function added returning `4096`; `Config::default()` updated
+  - All three provider constructors (`AnthropicProvider::new`, `DeepSeekProvider::new`,
+    `OpenAiProvider::new`) extended with a third `max_tokens: u32` parameter; each struct gains
+    a `max_tokens: u32` field
+  - All four `LlmProvider` trait methods that build API request bodies (`complete`,
+    `complete_with_tools`, `stream`, `stream_with_tools`) now use `self.max_tokens` instead of
+    the removed `DEFAULT_MAX_TOKENS = 1024` constant
+  - `pub(super) const DEFAULT_MAX_TOKENS: u32 = 1024` removed from `openai_compat.rs`; the
+    constant is no longer needed and its removal was verified with `cargo clippy -- -D warnings`
+  - `create_provider()` in `factory.rs` passes `config.max_tokens` to all three provider
+    constructors, completing the end-to-end data flow from config file to API request body
+  - `config.example.toml` updated with a commented-out `max_tokens = 4096` entry and
+    explanatory two-line comment immediately after the `model` field
+  - `test_config_default_max_tokens` unit test added: verifies `4096` default on empty TOML
+    and correct parsing of an explicit `max_tokens = 8192` value
+  - 168 unit tests + 13 doc tests passing; zero regressions
+
 ### Added
 
 - **SY-17: Telegram Markdown Formatting** - LLM Markdown responses are now rendered as formatted

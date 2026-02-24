@@ -49,6 +49,10 @@ pub struct Config {
     #[serde(default = "default_model")]
     pub model: String,
 
+    /// Maximum tokens for LLM responses (default: 4096).
+    #[serde(default = "default_max_tokens")]
+    pub max_tokens: u32,
+
     /// System prompt prepended to every LLM conversation.
     ///
     /// Shapes the AI's personality and instructions across all interactions.
@@ -196,6 +200,10 @@ fn default_model() -> String {
     "deepseek-chat".to_string()
 }
 
+fn default_max_tokens() -> u32 {
+    4096
+}
+
 impl Config {
     /// Load configuration from an explicit path or from the default search locations.
     ///
@@ -286,6 +294,7 @@ impl Default for Config {
             provider: default_provider(),
             api_key: None,
             model: default_model(),
+            max_tokens: default_max_tokens(),
             system_prompt: None,
             system_prompt_file: None,
             session: None,
@@ -651,6 +660,17 @@ token = "bot-token-only"
 
         assert_eq!(config.system_prompt, None);
         std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn test_config_default_max_tokens() {
+        // Empty TOML should yield the default of 4096.
+        let config: Config = toml::from_str("").unwrap();
+        assert_eq!(config.max_tokens, 4096);
+
+        // Explicit value should be honoured.
+        let config: Config = toml::from_str("max_tokens = 8192").unwrap();
+        assert_eq!(config.max_tokens, 8192);
     }
 
     #[test]
