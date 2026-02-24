@@ -32,10 +32,11 @@
 | 15. Code Refactoring | ✅ Complete | 7/7 |
 | 16. Telegram Markdown Formatting (SY-17) | ✅ Complete | 4/4 |
 | 17. Configurable max_tokens (SY-18) | ✅ Complete | 4/4 |
+| 18. Telegram Bot Commands (SY-19) | ⬜ Not Started | 0/6 |
 
 **Legend:** ⬜ Not Started | 🔄 In Progress | ✅ Complete | ⏸️ Blocked
 
-**Current Phase:** 17
+**Current Phase:** 18
 **Last Updated:** 2026-02-24
 
 ---
@@ -318,6 +319,21 @@ configured directory with correct rotation and file count limits.
 - [x] 17.4 Update `config.example.toml` with `max_tokens` field and inline comment; add unit test `test_config_default_max_tokens`
 
 **Test:** `cargo test -p synapse-core` green; setting `max_tokens = 8192` in config produces a request body with `"max_tokens": 8192`.
+
+---
+
+## Phase 18: Telegram Bot Commands (SY-19)
+
+**Goal:** Add slash command support to the Telegram bot — `/help`, `/new`, `/history`, `/list`, `/switch N`, `/delete N` — with multi-session management and a per-chat session cap.
+
+- [ ] 18.1 Add `max_sessions_per_chat: u32` to `TelegramConfig` in `synapse-core/src/config.rs` (serde default `10`)
+- [ ] 18.2 Move `chrono` from dev-dependencies to dependencies in `synapse-telegram/Cargo.toml`
+- [ ] 18.3 Create `synapse-telegram/src/commands.rs` — `Command` enum (BotCommands derive) + 6 handlers: `/help`, `/new`, `/history`, `/list`, `/switch N`, `/delete N`
+- [ ] 18.4 Update `synapse-telegram/src/main.rs` — branched dispatcher, `Me` injection, `set_my_commands`, `rebuild_chat_map` multi-session fix
+- [ ] 18.5 Add per-chat session cap enforcement in `/new` command (auto-delete oldest when over `max_sessions_per_chat`)
+- [ ] 18.6 Add unit tests for command logic, `rebuild_chat_map` multi-session, config deserialization
+
+**Test:** Send `/help`, `/new`, `/list`, `/switch 1`, `/delete 1` to the bot and verify correct responses; verify session cap evicts oldest session when exceeded.
 
 ---
 
