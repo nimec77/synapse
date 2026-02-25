@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **SY-19: Telegram Command Fixes & Interactive Keyboards** — Fixes the command fall-through bug
+  where `/switch` and `/delete` without arguments were silently forwarded to the LLM; adds a
+  `/start` welcome command, a defensive guard in `handle_message`, and interactive inline keyboards
+  for argumentless session selection:
+  - `Switch(usize)` and `Delete(usize)` in the `Command` enum changed to `Switch(String)` and
+    `Delete(String)` so `BotCommands::parse` always succeeds for argumentless invocations,
+    eliminating the root cause of the fall-through bug
+  - `parse_session_arg(arg: &str) -> Result<Option<usize>, String>` helper added to triage the
+    argument string: empty/whitespace → `Ok(None)` (show keyboard), numeric → `Ok(Some(n))`
+    (direct execution), non-numeric non-empty → `Err(hint)` (send error reply)
+  - `Start` variant added to `Command` enum with description `"Start the bot"`; `cmd_start`
+    sends the standard Telegram bot welcome message; total registered commands is now seven
+  - Defensive guard added to `handle_message` before any session resolution or LLM call:
+    messages with text starting with `/` receive a hint reply and return early, preventing
+    any slash-prefixed text from reaching the LLM regardless of `filter_command` parse outcome
+  - `fetch_chat_sessions(chat_id, storage, chat_map)` shared helper introduced to avoid
+    duplicating the session-fetch-and-filter pattern across `do_switch`, `do_delete`, and the
+    two keyboard functions
+  - `build_session_keyboard(action, sessions, active_id) -> InlineKeyboardMarkup` builds an
+    inline keyboard with one button per session; callback data format `"action:N"` (1-based);
+    active session marked with `*`; preview text capped at 20 chars
+  - `cmd_switch_keyboard` and `cmd_delete_keyboard` fetch sessions and send the keyboard with
+    `"Select a session to switch to:"` / `"Select a session to delete:"` prompts; plain-text
+    hint sent if the chat has no sessions
+  - `do_switch(n, chat_id, storage, chat_map) -> Result<String, String>` and
+    `do_delete(n, chat_id, config, storage, chat_map) -> Result<String, String>` extracted as
+    shared logic functions; both re-fetch the session list from the DB on every call to handle
+    staleness between keyboard display and button tap
+  - `parse_callback_data(data: &str) -> Option<(&str, usize)>` parses `"switch:N"` /
+    `"delete:N"` callback data strings
+  - `pub handle_callback(bot, q, config, storage, chat_map) -> ResponseResult<()>` endpoint for
+    `CallbackQuery` updates: (1) authorization check — silent drop for unauthorized users; (2)
+    `bot.answer_callback_query(q.id.clone())` called immediately to dismiss the loading spinner
+    before DB operations; (3) parse callback data; (4) execute `do_switch` / `do_delete`;
+    (5) `bot.edit_message_text` replaces the keyboard message with plain result text, preventing
+    double-tap; edit failures logged at `warn` but not propagated
+  - Dispatcher restructured from `Update::filter_message()` only to `dptree::entry()` with two
+    branches: the existing message branch and a new `Update::filter_callback_query()` branch
+    routing to `handle_callback`; no new `dptree::deps![]` entries required
+  - 25 new unit tests (14 required from Task 7 covering `parse_session_arg`, `parse_callback_data`,
+    `build_session_keyboard`, and the defensive guard condition; plus 11 covering `do_delete`
+    `active_idx` adjustment edge cases); 68 total `synapse-telegram` tests passing
+  - All changes confined to `synapse-telegram`; `synapse-core` and `synapse-cli` untouched;
+    no new crate dependencies (all new types from existing `teloxide 0.17`)
+
 ## [0.18.0] - 2026-02-25
 
 ### Added
