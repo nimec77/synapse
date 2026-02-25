@@ -32,12 +32,13 @@
 | 15. Code Refactoring | ✅ Complete | 7/7 |
 | 16. Telegram Markdown Formatting (SY-17) | ✅ Complete | 4/4 |
 | 17. Configurable max_tokens (SY-18) | ✅ Complete | 4/4 |
-| 18. Telegram Bot Commands (SY-19) | ⬜ Not Started | 0/6 |
+| 18. Telegram Bot Commands (SY-19) | ✅ Complete | 6/6 |
+| 19. Telegram Command Fixes & Interactive Keyboards (SY-20) | ⬜ Not Started | 0/7 |
 
 **Legend:** ⬜ Not Started | 🔄 In Progress | ✅ Complete | ⏸️ Blocked
 
-**Current Phase:** 18
-**Last Updated:** 2026-02-24
+**Current Phase:** 19
+**Last Updated:** 2026-02-25
 
 ---
 
@@ -334,6 +335,34 @@ configured directory with correct rotation and file count limits.
 - [ ] 18.6 Add unit tests for command logic, `rebuild_chat_map` multi-session, config deserialization
 
 **Test:** Send `/help`, `/new`, `/list`, `/switch 1`, `/delete 1` to the bot and verify correct responses; verify session cap evicts oldest session when exceeded.
+
+---
+
+---
+
+## Phase 19: Telegram Command Fixes & Interactive Keyboards (SY-20)
+
+**Goal:** Fix slash commands that fall through to the LLM instead of being handled by the dispatcher, and add inline keyboard UX for `/switch` and `/delete` when used without an argument.
+
+- [ ] 19.1 Change `Switch(usize)` → `Switch(String)` and `Delete(usize)` → `Delete(String)` in `Command` enum; add `parse_session_arg()` helper; update match arms
+- [ ] 19.2 Add `Start` variant to `Command` enum with a welcome message handler
+- [ ] 19.3 Add defensive command guard in `handlers::handle_message` — if text starts with a known command but `filter_command` missed it, reply with a hint instead of forwarding to the LLM
+- [ ] 19.4 Add `build_session_keyboard()`, `cmd_switch_keyboard()`, and `cmd_delete_keyboard()` in `commands.rs` — `InlineKeyboardMarkup` with one button per session, callback data `"action:index"`
+- [ ] 19.5 Add `handle_callback()` in `commands.rs` for `CallbackQuery` updates; refactor switch/delete core logic into `do_switch()`/`do_delete()` returning `String` so both slash-command and callback paths share the same logic
+- [ ] 19.6 Restructure dispatcher in `main.rs`: wrap in `dptree::entry()` with two branches — `Update::filter_message()` (existing) and `Update::filter_callback_query()` → `handle_callback`
+- [ ] 19.7 Add unit tests for `parse_session_arg`, `build_session_keyboard` callback data format, and defensive guard logic
+
+**Test:** `/help` returns the command list (not an LLM response); `/switch` with no argument shows a clickable session list; tapping a button switches/deletes the session and removes the keyboard; `/start` shows a welcome message; unknown commands are not forwarded to the LLM.
+
+**Implementation Notes:**
+
+- `Switch(usize)` and `Delete(usize)` cause `BotCommands::parse` to fail with an empty argument (empty string → `usize` parse error), making `/switch` and `/delete` from the Telegram menu always fall through to `handle_message`
+- `filter_command` uses `.ok()` on parse errors — failures are silent, causing fall-through to the next branch
+- Callback data format: `"switch:N"` or `"delete:N"` (1-based index)
+- `handle_callback` must call `bot.answer_callback_query(q.id)` immediately to dismiss the loading spinner
+- Edit the keyboard message after action to replace buttons with a result string (prevents double-clicks)
+- Defensive guard in `handle_message` uses `text.starts_with('/')` + known command names list; logs a `tracing::warn!` when triggered
+- No delete confirmation step — sessions are cheap to recreate
 
 ---
 
