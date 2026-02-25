@@ -24,7 +24,7 @@ Read the argument passed to this skill: `$ARGUMENTS`
 
 ## Step 2: Read current version
 
-Read the file `/Users/comrade77/RustroverProjects/synapse/Cargo.toml` and extract the `version` field from the `[workspace.package]` section.
+Read the file `Cargo.toml` and extract the `version` field from the `[workspace.package]` section.
 
 Expected format: `version = "X.Y.Z"`
 
@@ -45,7 +45,7 @@ Store both `CURRENT_VERSION` and `NEW_VERSION` for use in later steps.
 
 ## Step 4: Pre-release checks
 
-Run in the workspace root (`/Users/comrade77/RustroverProjects/synapse`):
+Run in the workspace root:
 
 ```bash
 cargo fmt --check && cargo clippy -- -D warnings && cargo test
@@ -59,7 +59,7 @@ If any command fails, print `Error: pre-release checks failed — fix issues bef
 
 Run:
 ```bash
-git -C /Users/comrade77/RustroverProjects/synapse status --porcelain
+git status --porcelain
 ```
 
 If output is non-empty, print `Error: working tree is dirty — commit or stash changes before releasing` and stop.
@@ -68,7 +68,7 @@ If output is non-empty, print `Error: working tree is dirty — commit or stash 
 
 ## Step 6: Check CHANGELOG has content
 
-Read `/Users/comrade77/RustroverProjects/synapse/CHANGELOG.md`.
+Read `CHANGELOG.md`.
 
 Find the `## [Unreleased]` section. There must be at least one non-empty, non-heading line between `## [Unreleased]` and the next `## [` heading (or end of file).
 
@@ -78,7 +78,7 @@ If the section is empty, print `Error: [Unreleased] section in CHANGELOG.md is e
 
 ## Step 7: Update version in root Cargo.toml
 
-Edit `/Users/comrade77/RustroverProjects/synapse/Cargo.toml`:
+Edit `Cargo.toml`:
 - Replace `version = "CURRENT_VERSION"` with `version = "NEW_VERSION"` in the `[workspace.package]` section.
 
 ---
@@ -87,7 +87,7 @@ Edit `/Users/comrade77/RustroverProjects/synapse/Cargo.toml`:
 
 Run:
 ```bash
-cargo check --manifest-path /Users/comrade77/RustroverProjects/synapse/Cargo.toml
+cargo check
 ```
 
 This updates `Cargo.lock` to reflect the new version.
@@ -126,8 +126,8 @@ Write the updated content back to CHANGELOG.md.
 
 Run:
 ```bash
-git -C /Users/comrade77/RustroverProjects/synapse add Cargo.toml Cargo.lock CHANGELOG.md
-git -C /Users/comrade77/RustroverProjects/synapse commit -m "chore: release vNEW_VERSION"
+git add Cargo.toml Cargo.lock CHANGELOG.md
+git commit -m "chore: release vNEW_VERSION"
 ```
 
 (Substitute the actual NEW_VERSION value.)
@@ -140,7 +140,7 @@ If the commit fails, print the error and stop.
 
 Run:
 ```bash
-git -C /Users/comrade77/RustroverProjects/synapse tag -a "vNEW_VERSION" -m "Release vNEW_VERSION"
+git tag -a "vNEW_VERSION" -m "Release vNEW_VERSION"
 ```
 
 (Substitute the actual NEW_VERSION value.)
