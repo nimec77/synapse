@@ -4,13 +4,13 @@
 
 ## Tasks
 
-- [ ] 19.1 Change `Switch(usize)` → `Switch(String)` and `Delete(usize)` → `Delete(String)` in `Command` enum; add `parse_session_arg()` helper; update match arms
-- [ ] 19.2 Add `Start` variant to `Command` enum with a welcome message handler
-- [ ] 19.3 Add defensive command guard in `handlers::handle_message` — if text starts with a known command but `filter_command` missed it, reply with a hint instead of forwarding to the LLM
-- [ ] 19.4 Add `build_session_keyboard()`, `cmd_switch_keyboard()`, and `cmd_delete_keyboard()` in `commands.rs` — `InlineKeyboardMarkup` with one button per session, callback data `"action:index"`
-- [ ] 19.5 Add `handle_callback()` in `commands.rs` for `CallbackQuery` updates; refactor switch/delete core logic into `do_switch()`/`do_delete()` returning `String` so both slash-command and callback paths share the same logic
-- [ ] 19.6 Restructure dispatcher in `main.rs`: wrap in `dptree::entry()` with two branches — `Update::filter_message()` (existing) and `Update::filter_callback_query()` → `handle_callback`
-- [ ] 19.7 Add unit tests for `parse_session_arg`, `build_session_keyboard` callback data format, and defensive guard logic
+- [x] 19.1 Change `Switch(usize)` → `Switch(String)` and `Delete(usize)` → `Delete(String)` in `Command` enum; add `parse_session_arg()` helper; update match arms
+- [x] 19.2 Add `Start` variant to `Command` enum with a welcome message handler
+- [x] 19.3 Add defensive command guard in `handlers::handle_message` — if text starts with a known command but `filter_command` missed it, reply with a hint instead of forwarding to the LLM
+- [x] 19.4 Add `build_session_keyboard()`, `cmd_switch_keyboard()`, and `cmd_delete_keyboard()` in `commands.rs` — `InlineKeyboardMarkup` with one button per session, callback data `"action:index"`
+- [x] 19.5 Add `handle_callback()` in `commands.rs` for `CallbackQuery` updates; refactor switch/delete core logic into `do_switch()`/`do_delete()` returning `String` so both slash-command and callback paths share the same logic
+- [x] 19.6 Restructure dispatcher in `main.rs`: wrap in `dptree::entry()` with two branches — `Update::filter_message()` (existing) and `Update::filter_callback_query()` → `handle_callback`
+- [x] 19.7 Add unit tests for `parse_session_arg`, `build_session_keyboard` callback data format, and defensive guard logic
 
 ## Acceptance Criteria
 

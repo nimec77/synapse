@@ -80,6 +80,17 @@ pub async fn handle_message(
         None => return Ok(()),
     };
 
+    // Defensive guard: any message starting with "/" that reached here was not
+    // parsed by filter_command. Reply with a hint instead of forwarding to the LLM.
+    if text.starts_with('/') {
+        bot.send_message(
+            msg.chat.id,
+            "I didn't understand that command. Use /help to see available commands.",
+        )
+        .await?;
+        return Ok(());
+    }
+
     let chat_id = msg.chat.id.0;
 
     // Step 3: Resolve or create session for this chat.

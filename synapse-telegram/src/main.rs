@@ -190,14 +190,18 @@ async fn main() -> anyhow::Result<()> {
         tracing::warn!("Failed to register bot commands: {}", e);
     }
 
-    // 13. Set up branched handler: commands route separately from regular messages.
-    let handler = Update::filter_message()
+    // 13. Set up branched handler: commands and callback queries route separately from messages.
+    let handler = dptree::entry()
         .branch(
-            dptree::entry()
-                .filter_command::<commands::Command>()
-                .endpoint(commands::handle_command),
+            Update::filter_message()
+                .branch(
+                    dptree::entry()
+                        .filter_command::<commands::Command>()
+                        .endpoint(commands::handle_command),
+                )
+                .branch(dptree::entry().endpoint(handlers::handle_message)),
         )
-        .branch(dptree::entry().endpoint(handlers::handle_message));
+        .branch(Update::filter_callback_query().endpoint(commands::handle_callback));
 
     tracing::info!("Dispatcher ready — polling for updates");
 

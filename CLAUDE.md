@@ -128,17 +128,25 @@ Providers return `Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> 
 
 ### Telegram Bot Architecture
 
-The dispatcher uses a **branched pattern**: command messages route to `commands::handle_command`, non-command messages route to `handlers::handle_message`. `Me` is injected at startup via `bot.get_me().await?` (required by `filter_command::<Command>()` to strip bot username suffixes like `/new@botname`).
+The dispatcher has two top-level branches: message updates and callback query updates. `Me` is injected at startup via `bot.get_me().await?` (required by `filter_command::<Command>()` to strip bot username suffixes like `/new@botname`).
 
 ```rust
-let handler = Update::filter_message()
-    .branch(dptree::entry().filter_command::<Command>().endpoint(commands::handle_command))
-    .branch(dptree::entry().endpoint(handlers::handle_message));
+let handler = dptree::entry()
+    .branch(
+        Update::filter_message()
+            .branch(dptree::entry().filter_command::<Command>().endpoint(commands::handle_command))
+            .branch(dptree::entry().endpoint(handlers::handle_message)),
+    )
+    .branch(Update::filter_callback_query().endpoint(commands::handle_callback));
 ```
 
 **Multi-session per chat**: `ChatSessionMap` is `Arc<RwLock<HashMap<i64, ChatSessions>>>` where `ChatSessions { sessions: Vec<Uuid>, active_idx: usize }`. Regular messages use `active_session_id()` (hot path, no DB). Commands that display or index sessions (`/list`, `/switch N`, `/delete N`) always call `list_sessions()` fresh for consistent 1-based ordering. Session cap (`max_sessions_per_chat`) is enforced in `/new` only; the oldest session (last in `sessions` vec) is evicted. `rebuild_chat_map` at startup groups `tg:<chat_id>` sessions from the DB with the most recently updated session at `active_idx = 0`.
 
 **Slash commands** (`commands.rs`) do **not** invoke the `Agent`/LLM — they are pure session management. Replies are plain text (no `ParseMode::Html`). Authorization reuses `handlers::is_authorized()`.
+
+**Interactive keyboards**: `/switch` and `/delete` without an argument send an `InlineKeyboardMarkup` (one button per session, callback data `"switch:N"` / `"delete:N"`, 1-based). `handle_callback` calls `answer_callback_query` immediately (before any DB calls) to dismiss the spinner, then executes `do_switch`/`do_delete`, then calls `edit_message_text` to replace the keyboard with a plain-text result. `do_switch` and `do_delete` re-fetch the session list from DB on every call (stale-index safety). `parse_session_arg(arg)` triages the `String` command argument: empty → show keyboard, numeric → execute directly, non-numeric → return error hint.
+
+**Defensive guard**: `handle_message` returns early with a hint for any text starting with `/` before reaching the LLM, preventing future command fall-through regressions.
 
 ### Telegram Message Pipeline
 
@@ -210,7 +218,7 @@ src/
 |-------|---------|
 | `synapse-core` | Core library: agent orchestrator, config, providers, storage, MCP, message types |
 | `synapse-cli` | CLI binary: one-shot, stdin, and session modes via `clap`; `-p`/`--provider` flag overrides config provider; REPL split into `repl/app.rs`, `repl/render.rs`, `repl/input.rs`; session commands in `commands.rs` |
-| `synapse-telegram` | Telegram bot interface: teloxide long-polling, branched dispatcher (commands vs. messages), user allowlist auth, `TelegramConfig`; `format.rs` converts LLM Markdown → Telegram HTML before sending; `commands.rs` implements 6 slash commands (`/help`, `/new`, `/history`, `/list`, `/switch N`, `/delete N`) |
+| `synapse-telegram` | Telegram bot interface: teloxide long-polling, two-branch dispatcher (messages + callback queries), user allowlist auth, `TelegramConfig`; `format.rs` converts LLM Markdown → Telegram HTML before sending; `commands.rs` implements 7 slash commands (`/start`, `/help`, `/new`, `/history`, `/list`, `/switch [N]`, `/delete [N]`) plus `handle_callback` for inline keyboard button taps |
 
 ## CI/CD
 
@@ -265,12 +273,12 @@ Ticket artifacts live in: `docs/prd/`, `docs/research/`, `docs/plan/`, `docs/tas
 
 **Starting a new feature (full automated):**
 ```
-/feature-development SY-<N> "Title" @docs/<description>.md
+/feature-development SY-<N> @docs/<description>.md
 ```
 
 **Starting a new feature (manual):**
 ```
-/analysis SY-<N> "Title" @docs/<description>.md
+/analysis SY-<N> @docs/<description>.md
 ```
 
 **Follow `docs/workflow.md` strictly. Three mandatory checkpoints — never skip:**
@@ -299,3 +307,4 @@ Ticket artifacts live in: `docs/prd/`, `docs/research/`, `docs/plan/`, `docs/tas
 | SY-16 | Code Refactoring | Dead code removal, `openai_compat.rs` shared base, magic-string constants, structured tracing, `Agent::from_config()`, `init_mcp_client()` in core, REPL file split, API surface tightened |
 | SY-17 | Telegram Markdown Formatting | `format.rs` with `md_to_telegram_html` + `chunk_html`; HTML parse mode with plain-text fallback in handlers |
 | SY-18 | Telegram Bot Commands | `max_tokens: u32` in `Config` (serde default 4096); `/help`, `/new`, `/history`, `/list`, `/switch N`, `/delete N` commands; `ChatSessions` multi-session struct; branched dispatcher; `max_sessions_per_chat` config cap |
+| SY-19 | Telegram Command Fixes & Interactive Keyboards | Fix `/switch`/`/delete` fall-through (`String` instead of `usize`); `parse_session_arg`; `/start` command; defensive guard in `handle_message`; inline keyboards with `InlineKeyboardMarkup`; `handle_callback` with `do_switch`/`do_delete` shared logic; dispatcher extended to handle `CallbackQuery` |
