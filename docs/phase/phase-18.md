@@ -4,12 +4,12 @@
 
 ## Tasks
 
-- [ ] 18.1 Add `max_sessions_per_chat: u32` to `TelegramConfig` in `synapse-core/src/config.rs` (serde default `10`)
-- [ ] 18.2 Move `chrono` from dev-dependencies to dependencies in `synapse-telegram/Cargo.toml`
-- [ ] 18.3 Create `synapse-telegram/src/commands.rs` — `Command` enum (BotCommands derive) + 6 handlers: `/help`, `/new`, `/history`, `/list`, `/switch N`, `/delete N`
-- [ ] 18.4 Update `synapse-telegram/src/main.rs` — branched dispatcher, `Me` injection, `set_my_commands`, `rebuild_chat_map` multi-session fix
-- [ ] 18.5 Add per-chat session cap enforcement in `/new` command (auto-delete oldest when over `max_sessions_per_chat`)
-- [ ] 18.6 Add unit tests for command logic, `rebuild_chat_map` multi-session, config deserialization
+- [x] 18.1 Add `max_sessions_per_chat: u32` to `TelegramConfig` in `synapse-core/src/config.rs` (serde default `10`)
+- [x] 18.2 Move `chrono` from dev-dependencies to dependencies in `synapse-telegram/Cargo.toml`
+- [x] 18.3 Create `synapse-telegram/src/commands.rs` — `Command` enum (BotCommands derive) + 6 handlers: `/help`, `/new`, `/history`, `/list`, `/switch N`, `/delete N`
+- [x] 18.4 Update `synapse-telegram/src/main.rs` — branched dispatcher, `Me` injection, `set_my_commands`, `rebuild_chat_map` multi-session fix
+- [x] 18.5 Add per-chat session cap enforcement in `/new` command (auto-delete oldest when over `max_sessions_per_chat`)
+- [x] 18.6 Add unit tests for command logic, `rebuild_chat_map` multi-session, config deserialization
 
 ## Acceptance Criteria
 

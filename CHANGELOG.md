@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **SY-18: Telegram Bot Commands** - Slash command interface with multi-session management per
+  Telegram chat and configurable session cap:
+  - Six slash commands registered with Telegram at startup via `set_my_commands` (autocomplete
+    in Telegram clients): `/help`, `/new`, `/history`, `/list`, `/switch N`, `/delete N`
+  - `ChatSessions` struct added to `synapse-telegram/src/handlers.rs` replacing the previous
+    single-UUID-per-chat map; tracks `sessions: Vec<Uuid>` and `active_idx: usize`; the
+    `active_session_id()` method provides O(1) lookup for the common case (sending messages)
+  - `ChatSessionMap` type alias updated to `Arc<RwLock<HashMap<i64, ChatSessions>>>`
+  - `resolve_session` fast and slow paths updated to work with the new `ChatSessions` type;
+    double-check pattern preserved for race-safe session creation
+  - `max_sessions_per_chat: u32` field added to `TelegramConfig` in
+    `synapse-core/src/config.rs` with `#[serde(default = "default_max_sessions_per_chat")]`
+    (default `10`); `#[derive(Default)]` replaced with a manual `impl Default` that calls the
+    serde default function to keep both defaults in sync
+  - `synapse-telegram/src/commands.rs` (new file): `Command` enum with
+    `#[derive(BotCommands, Clone)]`; `handle_command` entry point with authorization check;
+    six private `cmd_*` functions; `/new` enforces the cap and evicts the oldest session when
+    exceeded; `/history` formats messages with `chrono` timestamps and role labels; `/list`
+    and `/switch`/`/delete` use `list_sessions()` (`ORDER BY updated_at DESC`) as the source
+    of truth for display ordering, ensuring indexes are always consistent across commands
+  - Branched teloxide dispatcher: `filter_command::<Command>()` routes to `handle_command`;
+    non-command messages fall through to `handle_message` (backward compatible)
+  - `bot.get_me()` called at startup; resulting `Me` type injected into `dptree::deps![]` for
+    `filter_command` to strip the bot's username suffix from commands
+  - `rebuild_chat_map` rewritten to return `HashMap<i64, ChatSessions>`, grouping all
+    `tg:<chat_id>` sessions per chat; most recently updated session (index 0 in the DESC-ordered
+    result) becomes the active session on startup
+  - `chrono = "0.4"` promoted from `[dev-dependencies]` to `[dependencies]` in
+    `synapse-telegram/Cargo.toml` for runtime timestamp formatting in `/history`
+  - `config.example.toml` updated with a commented-out `max_sessions_per_chat = 10` entry and
+    two-line explanatory comment in the `[telegram]` section
+  - 12 new unit tests: 11 in `commands.rs` (`ChatSessions::active_session_id`, session cap
+    logic, index validation, `/delete` `active_idx` adjustment) and 1 in `main.rs` for
+    multi-session grouping in `rebuild_chat_map`; 265 total unit + 13 doc tests passing
+
 ### Changed
 
 - **SY-17: Configurable max_tokens** - Token limit for LLM responses is now user-configurable
