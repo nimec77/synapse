@@ -126,6 +126,20 @@ Providers return `Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> 
 
 `Agent::stream()` and `Agent::stream_owned()` yield `Result<StreamEvent, AgentError>` (not `ProviderError`). When tools are available, they resolve tool call iterations internally via `complete()` and stream only the final text response. When no tools are configured, they delegate directly to the provider's `stream()`. CLI consumes streams with `tokio::select!` for Ctrl+C handling. Uses `async_stream::stream!` macro and `eventsource-stream` for SSE parsing. OpenAI-compatible providers (Anthropic, DeepSeek, OpenAI) set `tool_choice: "auto"` in the API request when tools are present.
 
+### Telegram Bot Architecture
+
+The dispatcher uses a **branched pattern**: command messages route to `commands::handle_command`, non-command messages route to `handlers::handle_message`. `Me` is injected at startup via `bot.get_me().await?` (required by `filter_command::<Command>()` to strip bot username suffixes like `/new@botname`).
+
+```rust
+let handler = Update::filter_message()
+    .branch(dptree::entry().filter_command::<Command>().endpoint(commands::handle_command))
+    .branch(dptree::entry().endpoint(handlers::handle_message));
+```
+
+**Multi-session per chat**: `ChatSessionMap` is `Arc<RwLock<HashMap<i64, ChatSessions>>>` where `ChatSessions { sessions: Vec<Uuid>, active_idx: usize }`. Regular messages use `active_session_id()` (hot path, no DB). Commands that display or index sessions (`/list`, `/switch N`, `/delete N`) always call `list_sessions()` fresh for consistent 1-based ordering. Session cap (`max_sessions_per_chat`) is enforced in `/new` only; the oldest session (last in `sessions` vec) is evicted. `rebuild_chat_map` at startup groups `tg:<chat_id>` sessions from the DB with the most recently updated session at `active_idx = 0`.
+
+**Slash commands** (`commands.rs`) do **not** invoke the `Agent`/LLM — they are pure session management. Replies are plain text (no `ParseMode::Html`). Authorization reuses `handlers::is_authorized()`.
+
 ### Telegram Message Pipeline
 
 LLM responses are Markdown; Telegram requires HTML or MarkdownV2. HTML is used because it only needs `&`, `<`, `>` escaped — MarkdownV2 requires escaping 18+ characters and is fragile for LLM output.
@@ -151,7 +165,7 @@ Priority (highest first):
 3. `~/.config/synapse/config.toml` (user default)
 4. Error — no silent defaults; exits with a clear message
 
-`Config` top-level fields: `provider`, `api_key`, `model`, `max_tokens: u32` (serde default `4096` via `default_max_tokens()`; passed to every provider call), `system_prompt: Option<String>` (injected on-the-fly, never stored in DB), `system_prompt_file: Option<String>` (path to external prompt file; inline `system_prompt` wins if both set), `session`, `mcp`, `telegram`, `logging: Option<LoggingConfig>`. `TelegramConfig` lives in `synapse-core/src/config.rs`. Bot token resolution: `TELEGRAM_BOT_TOKEN` env var > `telegram.token` in config. Empty `allowed_users` rejects all users (secure by default). `LoggingConfig` fields: `directory` (default `"logs"`), `max_files` (default `7`), `rotation` (`"daily"` / `"hourly"` / `"never"`, default `"daily"`); omitting `[logging]` keeps stdout-only behavior.
+`Config` top-level fields: `provider`, `api_key`, `model`, `max_tokens: u32` (serde default `4096` via `default_max_tokens()`; passed to every provider call), `system_prompt: Option<String>` (injected on-the-fly, never stored in DB), `system_prompt_file: Option<String>` (path to external prompt file; inline `system_prompt` wins if both set), `session`, `mcp`, `telegram`, `logging: Option<LoggingConfig>`. `TelegramConfig` lives in `synapse-core/src/config.rs` and includes `max_sessions_per_chat: u32` (serde default `10`; manual `impl Default` — not derived — so `TelegramConfig::default()` returns `10` not `0`). Bot token resolution: `TELEGRAM_BOT_TOKEN` env var > `telegram.token` in config. Empty `allowed_users` rejects all users (secure by default). `LoggingConfig` fields: `directory` (default `"logs"`), `max_files` (default `7`), `rotation` (`"daily"` / `"hourly"` / `"never"`, default `"daily"`); omitting `[logging]` keeps stdout-only behavior.
 
 ### Storage
 
@@ -196,7 +210,7 @@ src/
 |-------|---------|
 | `synapse-core` | Core library: agent orchestrator, config, providers, storage, MCP, message types |
 | `synapse-cli` | CLI binary: one-shot, stdin, and session modes via `clap`; `-p`/`--provider` flag overrides config provider; REPL split into `repl/app.rs`, `repl/render.rs`, `repl/input.rs`; session commands in `commands.rs` |
-| `synapse-telegram` | Telegram bot interface: teloxide long-polling, session-per-chat, user allowlist auth, `TelegramConfig`; `format.rs` converts LLM Markdown → Telegram HTML before sending |
+| `synapse-telegram` | Telegram bot interface: teloxide long-polling, branched dispatcher (commands vs. messages), user allowlist auth, `TelegramConfig`; `format.rs` converts LLM Markdown → Telegram HTML before sending; `commands.rs` implements 6 slash commands (`/help`, `/new`, `/history`, `/list`, `/switch N`, `/delete N`) |
 
 ## CI/CD
 
@@ -266,4 +280,4 @@ Ticket artifacts live in: `docs/prd/`, `docs/research/`, `docs/plan/`, `docs/tas
 | SY-15 | File Logging | `LoggingConfig` in core, `tracing-appender` layered subscriber in Telegram bot |
 | SY-16 | Code Refactoring | Dead code removal, `openai_compat.rs` shared base, magic-string constants, structured tracing, `Agent::from_config()`, `init_mcp_client()` in core, REPL file split, API surface tightened |
 | SY-17 | Telegram Markdown Formatting | `format.rs` with `md_to_telegram_html` + `chunk_html`; HTML parse mode with plain-text fallback in handlers |
-| SY-18 | Configurable max_tokens | `max_tokens: u32` in `Config` (serde default 4096); propagated through factory to all providers; replaces hardcoded 1024 |
+| SY-18 | Telegram Bot Commands | `max_tokens: u32` in `Config` (serde default 4096); `/help`, `/new`, `/history`, `/list`, `/switch N`, `/delete N` commands; `ChatSessions` multi-session struct; branched dispatcher; `max_sessions_per_chat` config cap |
