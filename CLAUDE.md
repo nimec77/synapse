@@ -218,6 +218,24 @@ GitHub Actions on push to `master`/`feature/*` and PRs to `master`:
 - **check**: `cargo fmt --check` → `cargo clippy -- -D warnings` → `cargo test`
 - **audit**: `rustsec/audit-check` for vulnerability scanning
 
+## Versioning
+
+Lockstep versioning: all three crates share a single version via `version.workspace = true` in each `[package]` section. The canonical version lives in `[workspace.package]` in the root `Cargo.toml`.
+
+**Scheme (pre-1.0 semver `0.MINOR.PATCH`):**
+- `minor` — one bump per completed ticket (the normal case)
+- `patch` — bugfixes or docs-only changes
+- `major` — reserved for 1.0
+
+**Cutting a release:**
+```bash
+/release minor   # most common: new ticket shipped
+/release patch   # bugfix or docs only
+/release major   # 1.0 milestone
+```
+
+The `/release` skill (`.claude/skills/release/SKILL.md`) runs pre-release checks, bumps the version in `Cargo.toml`, rotates `CHANGELOG.md` (`[Unreleased]` → `[X.Y.Z] - YYYY-MM-DD`), commits, and tags `vX.Y.Z`. It does **not** push — run `git push && git push --tags` manually after review.
+
 ## Key Technology Decisions
 
 - **Rust**: Nightly, Edition 2024, resolver v3
