@@ -67,7 +67,7 @@ Rules for code generation. Reference [vision.md](vision.md) for architecture, st
 
 **DO:**
 - Write unit tests for parsing, serialization, logic
-- Use `mockall` for trait mocking
+- Use hand-rolled `MockProvider` for trait mocking (no `mockall` dependency)
 - Name tests: `test_<function>_<scenario>`
 - Target 80% coverage for `synapse-core`
 

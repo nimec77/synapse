@@ -27,7 +27,7 @@ the API surface and configuration format may change between releases.
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/synapse.git
+git clone https://github.com/nimec77/synapse.git
 cd synapse
 
 # Build
@@ -126,8 +126,23 @@ cargo build --release
 TELEGRAM_BOT_TOKEN="123456:ABC-DEF..." ./target/release/synapse-telegram
 ```
 
-Each chat gets its own persistent session. The bot resumes conversations across restarts. Unauthorized
-users are silently ignored (secure by default — an empty `allowed_users` list blocks everyone).
+Each chat supports multiple persistent sessions (up to `max_sessions_per_chat`, default 10). The bot
+resumes conversations across restarts. Unauthorized users are silently ignored (secure by default —
+an empty `allowed_users` list blocks everyone).
+
+### Bot commands
+
+| Command | Description |
+|---------|-------------|
+| `/help` | Show available commands |
+| `/new` | Start a new session |
+| `/history` | Show conversation history of the current session |
+| `/list` | List all sessions for this chat |
+| `/switch N` | Switch to session N (1-based index from `/list`) |
+| `/delete N` | Delete session N (1-based index from `/list`) |
+
+When `/new` would exceed `max_sessions_per_chat`, the oldest session is automatically evicted. Set
+`max_sessions_per_chat` in the `[telegram]` config section to adjust the cap.
 
 ## Configuration
 
@@ -151,9 +166,9 @@ provider = "deepseek"
 # api_key = "your-api-key-here"
 
 # Model name
-# DeepSeek: deepseek-chat, deepseek-coder
-# Anthropic: claude-3-5-sonnet-20241022, claude-3-opus-20240229
-# OpenAI: gpt-4, gpt-4-turbo, gpt-3.5-turbo
+# DeepSeek: deepseek-chat, deepseek-reasoner
+# Anthropic: claude-sonnet-4-6, claude-opus-4-6
+# OpenAI: gpt-4o, o3-mini
 model = "deepseek-chat"
 
 # System prompt prepended to every conversation (never stored in the database).
@@ -275,7 +290,7 @@ LlmProvider  SessionStore   McpClient
 Anthropic    SqliteStore
 DeepSeek
 OpenAI
-Mock
+Mock (test-only)
 ```
 
 ### Workspace crates
@@ -296,6 +311,17 @@ pub trait LlmProvider: Send + Sync {
     async fn complete(&self, messages: &[Message]) -> Result<Message, ProviderError>;
     fn stream(&self, messages: &[Message])
         -> Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send + '_>>;
+
+    // Default: delegates to complete(), ignoring tools.
+    // Anthropic, DeepSeek, and OpenAI override this to pass tools via the API.
+    async fn complete_with_tools(
+        &self, messages: &[Message], tools: &[ToolDefinition],
+    ) -> Result<Message, ProviderError>;
+
+    // Default: delegates to stream(), ignoring tools.
+    fn stream_with_tools(
+        &self, messages: &[Message], tools: &[ToolDefinition],
+    ) -> Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send + '_>>;
 }
 ```
 

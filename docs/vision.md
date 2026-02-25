@@ -31,7 +31,7 @@ Rather than using existing libraries (rig, genai, async-openai), the LLM provide
 | Logging | `tracing`, `tracing-subscriber`, `tracing-appender` | Structured logging with file rotation |
 | Telegram | `teloxide` | Telegram bot interface |
 | MCP | `rmcp` | Model Context Protocol support |
-| Testing | `tokio-test`, `mockall` | Async testing and mocking |
+| Testing | `tokio-test` | Async testing; mocking via hand-rolled `MockProvider` (no `mockall`) |
 | Async Utilities | `futures`, `async-stream` | Stream combinators, async generators |
 
 ### Development Tools
@@ -98,59 +98,73 @@ Rather than using existing libraries (rig, genai, async-openai), the LLM provide
 
 ```
 synapse/
-├── Cargo.toml                 # Workspace manifest
+├── Cargo.toml                 # Workspace manifest (lockstep versioning)
+├── Cargo.lock
 ├── CLAUDE.md                  # Claude Code guidance
+├── CHANGELOG.md               # Release history
 ├── README.md                  # Project documentation
 ├── config.example.toml        # Example configuration
+├── mcp_servers.example.json   # Example MCP servers config
+├── rust-toolchain.toml        # Nightly toolchain pin
 │
 ├── synapse-core/              # Core library crate
 │   ├── Cargo.toml
+│   ├── migrations/            # sqlx SQLite migrations
 │   └── src/
 │       ├── lib.rs             # Public API exports
-│       ├── agent.rs           # Agent orchestrator
-│       ├── config.rs          # Configuration types
-│       ├── error.rs           # Error types (thiserror)
-│       ├── message.rs         # Message types
-│       ├── session.rs         # Session management
+│       ├── agent.rs           # Agent orchestrator + AgentError
+│       ├── config.rs          # Config, TelegramConfig, LoggingConfig, ConfigError
+│       ├── message.rs         # Message, Role, ToolCallData types
+│       ├── session.rs         # Session, SessionSummary, StoredMessage, SessionConfig
 │       │
-│       ├── provider.rs        # Provider trait + module declarations
-│       ├── provider/          # LLM provider implementations
-│       │   ├── anthropic.rs   # Claude implementation
-│       │   ├── openai.rs      # OpenAI implementation
-│       │   └── streaming.rs   # Streaming response handling
+│       ├── provider.rs        # LlmProvider trait + ProviderError + module declarations
+│       └── provider/          # LLM provider implementations
+│           ├── anthropic.rs   # Claude implementation
+│           ├── deepseek.rs    # DeepSeek implementation
+│           ├── openai.rs      # OpenAI implementation
+│           ├── openai_compat.rs # Shared OpenAI-compatible base (serde types, SSE)
+│           ├── factory.rs     # create_provider() factory function
+│           ├── mock.rs        # MockProvider (test-only)
+│           └── streaming.rs   # StreamEvent enum
 │       │
-│       ├── storage.rs         # Storage trait + module declarations
-│       ├── storage/           # Persistence implementations
-│       │   └── database.rs    # sqlx database implementation
+│       ├── storage.rs         # SessionStore trait + StorageError + module declarations
+│       └── storage/
+│           └── sqlite.rs      # SqliteStore (sqlx) + create_storage() factory
 │       │
-│       ├── mcp.rs             # MCP client + module declarations
+│       ├── mcp.rs             # McpClient + McpError + init_mcp_client() + module declarations
 │       └── mcp/               # MCP components
 │           ├── protocol.rs    # Protocol types
-│           └── tools.rs       # Tool execution
+│           └── tools.rs       # Tool execution helpers
 │
 ├── synapse-cli/               # CLI binary crate
 │   ├── Cargo.toml
 │   └── src/
-│       ├── main.rs            # Entry point
-│       ├── args.rs            # CLI arguments (clap)
-│       ├── repl.rs            # Interactive REPL
-│       ├── oneshot.rs         # One-shot mode
-│       └── ui.rs              # Terminal UI (ratatui)
+│       ├── main.rs            # Entry point + clap args
+│       ├── commands.rs        # Session sub-commands (list/show/delete)
+│       ├── repl.rs            # REPL module declarations
+│       └── repl/
+│           ├── app.rs         # REPL application loop
+│           ├── render.rs      # ratatui rendering
+│           └── input.rs       # crossterm input handling
 │
 ├── synapse-telegram/          # Telegram bot crate
 │   ├── Cargo.toml
 │   └── src/
-│       ├── main.rs            # Bot entry point
-│       ├── handlers.rs        # Message handlers
-│       └── keyboard.rs        # Inline keyboards
+│       ├── main.rs            # Bot entry point + dispatcher setup
+│       ├── handlers.rs        # Message handler + authorization
+│       ├── commands.rs        # Slash commands (/help /new /history /list /switch /delete)
+│       └── format.rs          # md_to_telegram_html + chunk_html + escape_html
 │
-├── doc/                       # Documentation
-│   ├── idea.md                # Project concept
-│   └── vision.md              # Technical architecture (this file)
-│
-└── tests/                     # Integration tests
-    ├── provider_tests.rs      # LLM provider tests
-    └── session_tests.rs       # Session persistence tests
+└── docs/                      # Documentation
+    ├── idea.md                # Project concept
+    ├── vision.md              # Technical architecture (this file)
+    ├── conventions.md         # Code conventions
+    ├── workflow.md            # Feature development workflow
+    ├── prd/                   # Product Requirements Documents
+    ├── plan/                  # Architecture and implementation plans
+    ├── tasklist/              # Task breakdowns with checkboxes
+    ├── research/              # Technical research findings
+    └── summary/               # Post-ticket summaries
 ```
 
 ---
@@ -163,28 +177,28 @@ synapse/
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                              synapse-core                               │
 │                                                                         │
-│  ┌──────────────────┐    ┌──────────────────┐    ┌──────────────────┐   │
-│  │      Agent       │───▶│  SessionManager  │───▶│   SessionStore   │   │
-│  │   Orchestrator   │    │                  │    │     (trait)      │   │
-│  └────────┬─────────┘    └──────────────────┘    └──────────────────┘   │
-│           │                                                │            │
-│           │              ┌──────────────────┐              ▼            │
-│           ├─────────────▶│    McpClient     │    ┌──────────────────┐   │
-│           │              │                  │    │  SqliteStore     │   │
-│           │              └──────────────────┘    │  (impl)          │   │
-│           │                       │              └──────────────────┘   │
-│           ▼                       ▼                                     │
-│  ┌──────────────────┐    ┌──────────────────┐                           │
-│  │   LlmProvider    │    │   ToolRegistry   │                           │
-│  │     (trait)      │    │                  │                           │
-│  └────────┬─────────┘    └──────────────────┘                           │
+│  ┌──────────────────┐                          ┌──────────────────┐     │
+│  │      Agent       │─────────────────────────▶│   SessionStore   │     │
+│  │   Orchestrator   │                          │     (trait)      │     │
+│  └────────┬─────────┘                          └────────┬─────────┘     │
+│           │                                             │               │
+│           │              ┌──────────────────┐           ▼               │
+│           ├─────────────▶│    McpClient     │  ┌──────────────────┐     │
+│           │              │     (rmcp)       │  │  SqliteStore     │     │
+│           │              └──────────────────┘  │  (impl)          │     │
+│           │                                    └──────────────────┘     │
+│           ▼                                                             │
+│  ┌──────────────────┐                                                   │
+│  │   LlmProvider    │                                                   │
+│  │     (trait)      │                                                   │
+│  └────────┬─────────┘                                                   │
 │           │                                                             │
-│     ┌─────┴─────┐                                                       │
-│     ▼           ▼                                                       │
-│ ┌────────┐ ┌────────┐                                                   │
-│ │Anthropic│ │ OpenAI │                                                  │
-│ └────────┘ └────────┘                                                   │
-└──────────────────────────────────────────────────────────────────────── ┘
+│     ┌─────┼──────────┬──────────────┐                                   │
+│     ▼     ▼          ▼              ▼                                   │
+│ ┌───────┐┌────────┐┌────────┐┌──────────────┐                          │
+│ │Claude ││DeepSeek││ OpenAI ││Mock(test-only)│                         │
+│ └───────┘└────────┘└────────┘└──────────────┘                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Data Flow
@@ -230,11 +244,16 @@ synapse/
 ┌─────────────────────┐       ┌─────────────────────┐
 │   Configuration     │       │    McpServer        │
 ├─────────────────────┤       ├─────────────────────┤
-│ default_provider    │       │ command: String     │
-│ providers: Map      │       │ args: Vec<String>   │
-│ system_prompt       │       │ env: Map<String,    │
+│ provider: String    │       │ command: String     │
+│ api_key: Option<..> │       │ args: Vec<String>   │
+│ model: String       │       │ env: Map<String,    │
 │ max_tokens: u32     │       │      String>        │
-│ session_db_path     │       └─────────────────────┘
+│ system_prompt: Opt  │       └─────────────────────┘
+│ system_prompt_file  │
+│ session: SessionCfg │
+│ mcp: Option<McpCfg> │
+│ telegram: Option<…> │
+│ logging: Option<…>  │
 └─────────────────────┘
 
 ┌─────────────────────┐
@@ -292,10 +311,10 @@ CREATE INDEX idx_sessions_updated ON sessions(updated_at);
 ```
 
 ### Storage Strategy
-- **Sessions**: Database (SQLite default at `~/.config/synapse/sessions.db`, configurable to PostgreSQL/MySQL)
-- **Configuration**: TOML file at `~/.config/synapse/config.toml`
+- **Sessions**: SQLite database at `~/.config/synapse/sessions.db` (configurable via `DATABASE_URL` env var or `session.database_url` in config)
+- **Configuration**: TOML file at `~/.config/synapse/config.toml` (also supports `./config.toml` or `--config <path>`)
 - **MCP Servers**: JSON file at `~/.config/synapse/mcp_servers.json` (standard format compatible with Claude Desktop, Windsurf, etc.)
-- **Environment override**: `SYNAPSE_CONFIG` env var for custom path
+- **Environment override**: `SYNAPSE_MCP_CONFIG` env var for custom MCP config path
 
 ### Session Cleanup Behavior
 - **Max sessions limit**: When exceeded, oldest sessions are automatically deleted
@@ -340,24 +359,37 @@ This format is compatible with other MCP-enabled agents, allowing users to share
 ### Internal API (synapse-core public interface)
 
 ```rust
-// Agent creation and interaction
+// Agent — sole entry point for inference in interface crates
 pub struct Agent { ... }
 
 impl Agent {
-    pub async fn new(config: Config) -> Result<Self>;
-    pub async fn chat(&self, session_id: Uuid, message: &str) -> impl Stream<Item = Result<StreamEvent>>;
-    pub async fn create_session(&self, options: SessionOptions) -> Result<Session>;
-    pub async fn list_sessions(&self) -> Result<Vec<SessionSummary>>;
-    pub async fn delete_session(&self, id: Uuid) -> Result<()>;
+    // Low-level: manual construction
+    pub fn new(provider: Box<dyn LlmProvider>, mcp_client: Option<McpClient>) -> Self;
+
+    // Preferred: construct from config (resolves provider + system prompt internally)
+    pub fn from_config(config: &Config, mcp_client: Option<McpClient>) -> Result<Self, AgentError>;
+
+    pub fn with_system_prompt(self, prompt: impl Into<String>) -> Self;
+
+    // Blocking tool-call loop (up to MAX_ITERATIONS = 10)
+    pub async fn complete(&self, messages: &mut Vec<Message>) -> Result<Message, AgentError>;
+
+    // Streaming — borrows messages; resolves tool calls via complete() internally
+    pub fn stream(&self, messages: &mut Vec<Message>)
+        -> impl Stream<Item = Result<StreamEvent, AgentError>> + '_;
+
+    // Streaming — takes ownership of messages
+    pub fn stream_owned(&self, messages: Vec<Message>)
+        -> impl Stream<Item = Result<StreamEvent, AgentError>> + '_;
+
+    // Graceful MCP connection teardown
+    pub async fn shutdown(self);
 }
 
-// Stream events
+// Stream events — exactly two variants
 pub enum StreamEvent {
     TextDelta(String),
-    ToolCall { id: String, name: String, input: Value },
-    ToolResult { id: String, output: Value },
     Done,
-    Error(Error),
 }
 ```
 
@@ -371,36 +403,32 @@ echo "Hello" | synapse
 
 # REPL mode
 synapse --repl
-synapse -r --session <id>
+synapse -r -s <uuid>    # resume an existing session
 
 # Session management
 synapse sessions list
-synapse sessions show <id>
-synapse sessions delete <id>
+synapse sessions show <uuid>
+synapse sessions delete <uuid>
 
-# Configuration
-synapse config show
-synapse config set default_provider anthropic
+# Custom config
+synapse --config /path/to/config.toml "Hello"
 ```
 
 ### Error Handling Strategy
 
 ```rust
-// Library errors (synapse-core) - typed with thiserror
+// synapse-core error types (thiserror)
 #[derive(Debug, thiserror::Error)]
-pub enum SynapseError {
+pub enum AgentError {
     #[error("Provider error: {0}")]
     Provider(#[from] ProviderError),
-
-    #[error("Storage error: {0}")]
-    Storage(#[from] StorageError),
-
-    #[error("Configuration error: {0}")]
-    Config(#[from] ConfigError),
-
     #[error("MCP error: {0}")]
     Mcp(#[from] McpError),
+    #[error("Max tool-call iterations exceeded")]
+    MaxIterationsExceeded,
 }
+
+// Other core error types: ProviderError, StorageError, ConfigError (each in their own module)
 
 // Application errors (CLI/Telegram) - use anyhow for ergonomics
 fn main() -> anyhow::Result<()> { ... }
@@ -522,13 +550,13 @@ cargo build --release
 ### Environment Variables
 | Variable | Purpose | Default |
 |----------|---------|---------|
-| `SYNAPSE_CONFIG` | Config file path | Platform default |
+| `ANTHROPIC_API_KEY` | Claude API key (overrides `api_key` in config) | From config |
+| `DEEPSEEK_API_KEY` | DeepSeek API key (overrides `api_key` in config) | From config |
+| `OPENAI_API_KEY` | OpenAI API key (overrides `api_key` in config) | From config |
+| `TELEGRAM_BOT_TOKEN` | Telegram bot token (overrides `telegram.token` in config) | From config |
+| `DATABASE_URL` | Database connection string (takes priority over config) | `sqlite:~/.config/synapse/sessions.db` |
 | `SYNAPSE_MCP_CONFIG` | MCP servers JSON file path | `~/.config/synapse/mcp_servers.json` |
-| `SYNAPSE_LOG` | Log level | `info` |
-| `DATABASE_URL` | Database connection string (env var takes priority over config) | `sqlite:~/.config/synapse/sessions.db` |
-| `DEEPSEEK_API_KEY` | DeepSeek API key | From config |
-| `ANTHROPIC_API_KEY` | Claude API key | From config |
-| `OPENAI_API_KEY` | OpenAI API key | From config |
+| `RUST_LOG` | Log level filter (e.g. `debug`, `info`) | Unset |
 
 ---
 
@@ -565,7 +593,6 @@ pub async fn chat(&self, session_id: Uuid, message: &str) -> Result<...> {
 ### Error Tracking
 - Log errors with full context (session ID, provider, model)
 - Stderr for CLI errors with user-friendly messages
-- Structured JSON logs available via `SYNAPSE_LOG_FORMAT=json`
 
 ### File Logging (Telegram Bot)
 
@@ -690,20 +717,3 @@ This architecture provides:
 
 The project structure supports incremental development: start with CLI + one provider, then add more providers, then Telegram, then MCP.
 
----
-
-## Roadmap / Upcoming Work
-
-### Phase 15: Code Refactoring (planned)
-
-A focused internal quality pass following the Phase 14 feature milestone. No external behaviour changes — exclusively improving structure, eliminating duplication, and hardening the public API:
-
-| Task | Description |
-|------|-------------|
-| 15.1 Dead code removal | Drop vestigial `placeholder` module; prune unused `StreamEvent` variants |
-| 15.2 OpenAI-compat base | Merge ~400 lines of duplicated serde types and HTTP logic from `deepseek.rs` / `openai.rs` into a shared `provider/openai_compat.rs` |
-| 15.3 Magic string constants | `Role::as_str()`, `Role::from_str()`, named constants for SSE markers, env-var names, error messages |
-| 15.4 Structured tracing | Add `tracing` instrumentation to core (agent loop, providers, storage, MCP); replace bare `eprintln!` calls |
-| 15.5 Shared utilities | Consolidate `init_mcp_client()` and `Agent::from_config()` into core (currently duplicated across CLI and Telegram) |
-| 15.6 File splitting | Break `repl.rs` (678 lines) into `repl/{app,render,input}.rs`; extract `commands.rs` from CLI `main.rs` |
-| 15.7 API surface + async hygiene | Narrow `lib.rs` re-exports; replace blocking `std::fs::create_dir_all` with `tokio::fs` in `sqlite.rs` |

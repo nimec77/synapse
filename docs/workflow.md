@@ -96,7 +96,7 @@ Run these individually when you need fine-grained control:
 
 **Usage:** `/analysis <ticket-id> "<title>" [description-file]`
 
-**Example:** `/analysis IF-3 "Plugin Loading" docs/phase/phase-3.md`
+**Example:** `/analysis SY-3 "Plugin Loading" docs/phase/phase-3.md`
 
 ---
 
@@ -111,7 +111,7 @@ Run these individually when you need fine-grained control:
 
 **Usage:** `/research <ticket-id>`
 
-**Example:** `/research IF-2`
+**Example:** `/research SY-2`
 
 ---
 
@@ -126,7 +126,7 @@ Run these individually when you need fine-grained control:
 
 **Usage:** `/plan <ticket-id>`
 
-**Example:** `/plan IF-2`
+**Example:** `/plan SY-2`
 
 ---
 
@@ -141,7 +141,7 @@ Run these individually when you need fine-grained control:
 
 **Usage:** `/tasklist <ticket-id>`
 
-**Example:** `/tasklist IF-2`
+**Example:** `/tasklist SY-2`
 
 ---
 
@@ -160,7 +160,7 @@ Run these individually when you need fine-grained control:
 
 **Usage:** `/implement-orchestrated <ticket-id>`
 
-**Example:** `/implement-orchestrated IF-2`
+**Example:** `/implement-orchestrated SY-2`
 
 ---
 
@@ -175,7 +175,7 @@ Run these individually when you need fine-grained control:
 
 **Usage:** `/run-reviewer <ticket-id>`
 
-**Example:** `/run-reviewer IF-2`
+**Example:** `/run-reviewer SY-2`
 
 ---
 
@@ -194,7 +194,7 @@ Run these individually when you need fine-grained control:
 
 **Usage:** `/qa <ticket-id>` or `/qa <release-id>`
 
-**Example:** `/qa IF-2` or `/qa R-1.0`
+**Example:** `/qa SY-2` or `/qa R-1.0`
 
 ---
 
@@ -208,7 +208,7 @@ Run these individually when you need fine-grained control:
 
 **Usage:** `/docs-update <ticket-id>`
 
-**Example:** `/docs-update IF-2`
+**Example:** `/docs-update SY-2`
 
 ---
 
@@ -225,10 +225,10 @@ Run these individually when you need fine-grained control:
 **Solution:**
 ```bash
 # Option 1: Provide ticket ID explicitly
-/plan IF-2
+/plan SY-2
 
 # Option 2: Set the active ticket first
-echo "IF-2" > docs/.active_ticket
+echo "SY-2" > docs/.active_ticket
 /plan
 ```
 
@@ -241,7 +241,7 @@ echo "IF-2" > docs/.active_ticket
 **Cause:** Attempted to run `/tasklist` before the plan was approved.
 
 **Solution:**
-1. Run `/plan <ticket-id>` to create or complete the plan
+1. Run `/plan SY-N` to create or complete the plan
 2. Ensure the plan contains `Status: PLAN_APPROVED`
 3. Re-run `/tasklist`
 
@@ -413,8 +413,8 @@ When using `/feature-development` with a description file (e.g., `docs/phase/pha
 
 | Situation | Recovery Command/Action |
 |-----------|------------------------|
-| Unknown current state | `/validate <ticket-id>` |
-| Need to restart implementation | `git restore . && /implement-orchestrated <ticket-id>` |
+| Unknown current state | `/validate SY-N` |
+| Need to restart implementation | `git restore . && /implement-orchestrated SY-N` |
 | Stuck on a specific task | Fix manually, mark `[x]` in tasklist, continue |
 | Wrong changes committed | `git revert HEAD` or `git reset --soft HEAD~1` |
 | Need to re-plan | Delete `docs/plan/<ticket>.md`, run `/plan` |
@@ -439,7 +439,7 @@ These checkpoints allow you to:
 
 ## Ticket ID Convention
 
-- **Feature tickets:** `IF-N` (e.g., `IF-1`, `IF-2`)
+- **Feature tickets:** `SY-N` (e.g., `SY-1`, `SY-2`)
 - **Releases:** `R-X.Y` (e.g., `R-1.0`, `R-2.0`)
 
 The active ticket is stored in `docs/.active_ticket`. Most commands will read from this file if no ticket ID is provided.
@@ -448,18 +448,18 @@ The active ticket is stored in `docs/.active_ticket`. Most commands will read fr
 
 ```bash
 # Option 1: Run the full orchestrated workflow
-/feature-development IF-2 "CLI Arguments" docs/phase/phase-2.md
+/feature-development SY-2 "CLI Arguments" docs/phase/phase-2.md
 
 # Option 2: Run individual phases manually
-/analysis IF-2 "CLI Arguments" docs/phase/phase-2.md
-/research IF-2
-/plan IF-2
-/tasklist IF-2
-/implement-orchestrated IF-2
-/run-reviewer IF-2
-/qa IF-2
-/docs-update IF-2
-/validate IF-2
+/analysis SY-2 "CLI Arguments" docs/phase/phase-2.md
+/research SY-2
+/plan SY-2
+/tasklist SY-2
+/implement-orchestrated SY-2
+/run-reviewer SY-2
+/qa SY-2
+/docs-update SY-2
+/validate SY-2
 ```
 
 ## Tips

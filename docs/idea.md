@@ -7,7 +7,7 @@ Develop an AI agent in Rust that receives messages from users and responds to th
 - **Shared code**: Core agent logic and common functions
 - **Interface projects**: Separate implementations for different interaction methods
   - CLI application (initial implementation)
-  - Telegram bot (planned future addition)
+  - Telegram bot
 
 ## Core Functionality
 
