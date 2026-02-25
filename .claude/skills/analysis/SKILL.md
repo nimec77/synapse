@@ -1,6 +1,6 @@
 ---
 description: "Initialize feature: create a ticket and draft the PRD"
-argument-hint: "[ticket-id] [short-title] [description-file]"
+argument-hint: "[ticket-id] [description-file]"
 allowed-tools: Read, Write, Glob, Grep
 model: opus
 ---
@@ -9,8 +9,7 @@ model: opus
 
 Parse `$ARGUMENTS` to extract positional arguments:
 - **TICKET_ID**: first whitespace-delimited token from `$ARGUMENTS`
-- **SHORT_TITLE**: quoted string (if present) from `$ARGUMENTS`
-- **DESCRIPTION_FILE**: remaining token (file path, strip leading `@` if present) from `$ARGUMENTS`
+- **DESCRIPTION_FILE**: second token (file path, strip leading `@` if present) from `$ARGUMENTS`
 
 Use TICKET_ID wherever the ticket identifier is needed below. Do NOT use the raw `$1` value — it may be incorrect due to argument parsing issues.
 
@@ -50,7 +49,7 @@ When a description file is provided:
 1. Update `docs/.active_ticket` with the value `TICKET_ID`.
 2. If the file `docs/prd/TICKET_ID.prd.md` does not exist, create it from the template `@docs/prd.template.md`.
 3. Transfer `$ARGUMENTS` to the "Context / Idea" section.
-4. If a third argument (description file path) is provided, read the file and incorporate its content into the PRD as additional context in the "Context / Idea" section. **Copy all technical specifications exactly as written.**
+4. If a second argument (description file path) is provided, read the file and incorporate its content into the PRD as additional context in the "Context / Idea" section. **Copy all technical specifications exactly as written.**
 5. Create the following sections: goals, user stories, scenarios, metrics, constraints, risks, open questions.
 6. Fill in what can be derived from the repository context and the description file (if provided).
 7. **Verify**: All specifications from the description file are present in the PRD without modification.

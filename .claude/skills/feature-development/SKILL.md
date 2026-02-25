@@ -1,6 +1,6 @@
 ---
 description: "End-to-end AI-driven feature workflow: PRD -> plan -> tasks -> implementation -> review -> QA -> docs"
-argument-hint: "[ticket-id] [short-title] [description-file]"
+argument-hint: "[ticket-id] [description-file]"
 allowed-tools: Read, Write, Glob, Grep, Skill, Task, AskUserQuestion
 model: sonnet
 ---
@@ -9,8 +9,7 @@ model: sonnet
 
 Parse `$ARGUMENTS` to extract positional arguments:
 - **TICKET_ID**: first whitespace-delimited token from `$ARGUMENTS`
-- **SHORT_TITLE**: quoted string (if present) from `$ARGUMENTS`
-- **DESCRIPTION_FILE**: remaining token (file path, strip leading `@` if present) from `$ARGUMENTS`
+- **DESCRIPTION_FILE**: second token (file path, strip leading `@` if present) from `$ARGUMENTS`
 
 Use TICKET_ID wherever the ticket identifier is needed below. Do NOT use the raw `$1` value — it may be incorrect due to argument parsing issues.
 
@@ -43,7 +42,7 @@ Skip if `docs/prd/TICKET_ID.prd.md` exists. Otherwise:
 
 **After this Task returns, execute step 3.**
 
-- Task: `subagent_type: "general-purpose"`, `model: "opus"`, `description: "Create TICKET_ID PRD"`, `prompt: "Create a PRD for ticket TICKET_ID. Read '.claude/skills/analysis/SKILL.md' for instructions. Arguments: TICKET_ID SHORT_TITLE DESCRIPTION_FILE"`
+- Task: `subagent_type: "general-purpose"`, `model: "opus"`, `description: "Create TICKET_ID PRD"`, `prompt: "Create a PRD for ticket TICKET_ID. Read '.claude/skills/analysis/SKILL.md' for instructions. Arguments: TICKET_ID DESCRIPTION_FILE"`
 
 ---
 
