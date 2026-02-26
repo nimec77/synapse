@@ -88,10 +88,8 @@ pub fn md_to_telegram_html(markdown: &str) -> String {
             Event::End(TagEnd::BlockQuote(_)) => out.push_str("</blockquote>"),
 
             // --- Paragraphs ---
-            Event::Start(Tag::Paragraph) => {
-                if !first_paragraph {
-                    out.push('\n');
-                }
+            Event::Start(Tag::Paragraph) if !first_paragraph => {
+                out.push('\n');
             }
             Event::End(TagEnd::Paragraph) => {
                 out.push('\n');
