@@ -136,7 +136,7 @@ an empty `allowed_users` list blocks everyone).
 |---------|-------------|
 | `/help` | Show available commands |
 | `/new` | Start a new session |
-| `/history` | Show conversation history of the current session |
+| `/history` | Show recent messages from the current session |
 | `/list` | List all sessions for this chat |
 | `/switch N` | Switch to session N (1-based index from `/list`) |
 | `/delete N` | Delete session N (1-based index from `/list`) |

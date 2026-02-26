@@ -218,7 +218,7 @@ src/
 |-------|---------|
 | `synapse-core` | Core library: agent orchestrator, config, providers, storage, MCP, message types |
 | `synapse-cli` | CLI binary: one-shot, stdin, and session modes via `clap`; `-p`/`--provider` flag overrides config provider; REPL split into `repl/app.rs`, `repl/render.rs`, `repl/input.rs`; session commands in `commands.rs` |
-| `synapse-telegram` | Telegram bot interface: teloxide long-polling, two-branch dispatcher (messages + callback queries), user allowlist auth, `TelegramConfig`; `format.rs` converts LLM Markdown → Telegram HTML before sending; `commands.rs` implements 7 slash commands (`/start`, `/help`, `/new`, `/history`, `/list`, `/switch [N]`, `/delete [N]`) plus `handle_callback` for inline keyboard button taps |
+| `synapse-telegram` | Telegram bot interface: teloxide long-polling, two-branch dispatcher (messages + callback queries), user allowlist auth, `TelegramConfig`; `format.rs` converts LLM Markdown → Telegram HTML before sending; `commands.rs` implements 7 slash commands (`/start`, `/help`, `/new`, `/history` (last 10 messages, truncated to 150 chars), `/list`, `/switch [N]`, `/delete [N]`) plus `handle_callback` for inline keyboard button taps |
 
 ## CI/CD
 
