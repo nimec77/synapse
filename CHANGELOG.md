@@ -9,7 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- `/history` now shows the last 10 user/assistant messages (truncated to 150 chars) instead of dumping the full conversation.
+- **SY-20: Improve /history Command** — Replaces the unbounded full message dump with a compact
+  "last 10 messages" view in the Telegram bot `/history` command:
+  - `format_history(messages: &[StoredMessage]) -> String` pure helper added: filters to
+    `Role::User` and `Role::Assistant` only (discarding `System` and `Tool` messages), takes the
+    chronologically last 10 messages via `saturating_sub(10)` skip, and formats each as
+    `[role_label] timestamp\ncontent\n\n`
+  - `truncate_content(content: &str, max_chars: usize) -> String` pure helper added: truncates
+    to `max_chars` Unicode scalar values (`.chars().take(max_chars)`) and appends `...`; content
+    at or below the limit is returned unchanged; boundary case (exactly 150 chars) returns no
+    ellipsis
+  - `cmd_history` refactored to delegate formatting to `format_history`; sessions containing
+    only `System`/`Tool` messages now correctly reply "No messages in current session."
+  - `Command::History` description changed from `"Show conversation history"` to
+    `"Show recent messages"` so `/help` output accurately reflects the new behavior
+  - 11 new unit tests added covering all PRD scenarios: 5 for `truncate_content` (short, exact
+    limit, over limit, long, empty) and 6 for `format_history` (role filtering, User/Assistant
+    passthrough, last-10 limit selection, fewer-than-10, empty, truncation)
+  - All changes confined to `synapse-telegram/src/commands.rs`; `synapse-core` and `synapse-cli`
+    untouched; no new crate dependencies; 79 total `synapse-telegram` tests passing
 
 ## [0.19.0] - 2026-02-26
 
