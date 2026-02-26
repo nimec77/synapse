@@ -140,9 +140,25 @@ Skip if DESCRIPTION_FILE is empty, not provided, or the file does not exist.
 
 ---
 
-### 11. WORKFLOW COMPLETE
+### 11. Commit pending changes
+
+- Skill: `skill: "commit"`
+
+**After this Skill returns, execute step 12.**
+
+---
+
+### 12. Release
+
+- Skill: `skill: "release"`, `args: "minor"`
+
+**After this Skill returns, execute step 13.**
+
+---
+
+### 13. WORKFLOW COMPLETE
 
 All gates have passed. Report final status to the user:
 - Feature `TICKET_ID` dev-cycle is complete.
-- List which gates were executed: PRD, research & plan, tasklist, implementation, review (with iteration count), documentation, validate.
+- List which gates were executed: PRD, research & plan, tasklist, implementation, review (with iteration count), documentation, validate, commit, release.
 - Report any artifacts that were created during steps 2–4.

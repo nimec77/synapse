@@ -189,12 +189,28 @@ Skip if DESCRIPTION_FILE is empty, not provided, or the file does not exist.
 
 ### 15. Update CLAUDE.md
 
-**After this Skill returns, you have reached the end.**
+**After this Skill returns, execute step 16.**
 
 - Skill: `skill: "init"`
 
 ---
 
+### 16. Commit pending changes
+
+- Skill: `skill: "commit"`
+
+**After this Skill returns, execute step 17.**
+
+---
+
+### 17. Release
+
+- Skill: `skill: "release"`, `args: "minor"`
+
+**After this Skill returns, you have reached the end.**
+
+---
+
 ### WORKFLOW COMPLETE
 
-All gates have passed. Report final status to the user: feature `TICKET_ID` is complete. List which gates were executed and which were skipped.
+All gates have passed. Report final status to the user: feature `TICKET_ID` is complete. List which gates were executed and which were skipped, including commit and release.
