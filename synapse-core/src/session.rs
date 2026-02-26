@@ -22,8 +22,6 @@ pub struct Session {
     pub provider: String,
     /// The model name used (e.g., "deepseek-chat", "claude-3-opus").
     pub model: String,
-    /// Optional system prompt used for this session.
-    pub system_prompt: Option<String>,
     /// When the session was created.
     pub created_at: DateTime<Utc>,
     /// When the session was last updated (message added).
@@ -41,7 +39,6 @@ impl Session {
             name: None,
             provider: provider.into(),
             model: model.into(),
-            system_prompt: None,
             created_at: now,
             updated_at: now,
         }
@@ -50,12 +47,6 @@ impl Session {
     /// Set the name for this session.
     pub fn with_name(mut self, name: impl Into<String>) -> Self {
         self.name = Some(name.into());
-        self
-    }
-
-    /// Set the system prompt for this session.
-    pub fn with_system_prompt(mut self, prompt: impl Into<String>) -> Self {
-        self.system_prompt = Some(prompt.into());
         self
     }
 }
@@ -148,7 +139,6 @@ mod tests {
         assert_eq!(session.name, None);
         assert_eq!(session.provider, "deepseek");
         assert_eq!(session.model, "deepseek-chat");
-        assert_eq!(session.system_prompt, None);
         assert!(session.created_at <= Utc::now());
         assert_eq!(session.created_at, session.updated_at);
     }
@@ -161,26 +151,12 @@ mod tests {
     }
 
     #[test]
-    fn test_session_with_system_prompt() {
-        let session =
-            Session::new("openai", "gpt-4").with_system_prompt("You are a helpful assistant.");
-
-        assert_eq!(
-            session.system_prompt,
-            Some("You are a helpful assistant.".to_string())
-        );
-    }
-
-    #[test]
     fn test_session_field_access() {
-        let session = Session::new("test-provider", "test-model")
-            .with_name("Test Session")
-            .with_system_prompt("Test prompt");
+        let session = Session::new("test-provider", "test-model").with_name("Test Session");
 
         assert_eq!(session.provider, "test-provider");
         assert_eq!(session.model, "test-model");
         assert_eq!(session.name.as_deref(), Some("Test Session"));
-        assert_eq!(session.system_prompt.as_deref(), Some("Test prompt"));
     }
 
     #[test]

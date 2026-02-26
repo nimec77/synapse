@@ -108,15 +108,14 @@ impl SessionStore for SqliteStore {
         tracing::debug!(session_id = %session.id, "sqlite: creating session");
         sqlx::query(
             r#"
-            INSERT INTO sessions (id, name, provider, model, system_prompt, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO sessions (id, name, provider, model, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(session.id.to_string())
         .bind(&session.name)
         .bind(&session.provider)
         .bind(&session.model)
-        .bind(&session.system_prompt)
         .bind(session.created_at.to_rfc3339())
         .bind(session.updated_at.to_rfc3339())
         .execute(&self.pool)
@@ -130,7 +129,7 @@ impl SessionStore for SqliteStore {
         tracing::debug!(session_id = %id, "sqlite: retrieving session");
         let row = sqlx::query(
             r#"
-            SELECT id, name, provider, model, system_prompt, created_at, updated_at
+            SELECT id, name, provider, model, created_at, updated_at
             FROM sessions
             WHERE id = ?
             "#,
@@ -161,7 +160,6 @@ impl SessionStore for SqliteStore {
                     name: row.get("name"),
                     provider: row.get("provider"),
                     model: row.get("model"),
-                    system_prompt: row.get("system_prompt"),
                     created_at,
                     updated_at,
                 }))
