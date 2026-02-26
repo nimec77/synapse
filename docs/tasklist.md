@@ -33,7 +33,7 @@
 | 16. Telegram Markdown Formatting (SY-17) | ✅ Complete | 4/4 |
 | 17. Configurable max_tokens (SY-18) | ✅ Complete | 4/4 |
 | 18. Telegram Bot Commands (SY-19) | ✅ Complete | 6/6 |
-| 19. Telegram Command Fixes & Interactive Keyboards (SY-20) | ⬜ Not Started | 0/7 |
+| 19. Telegram Command Fixes & Interactive Keyboards (SY-20) | ✅ Complete | 7/7 |
 | 20. Improve /history Command (SY-20) | ⬜ Not Started | 0/4 |
 
 **Legend:** ⬜ Not Started | 🔄 In Progress | ✅ Complete | ⏸️ Blocked
@@ -328,12 +328,12 @@ configured directory with correct rotation and file count limits.
 
 **Goal:** Add slash command support to the Telegram bot — `/help`, `/new`, `/history`, `/list`, `/switch N`, `/delete N` — with multi-session management and a per-chat session cap.
 
-- [ ] 18.1 Add `max_sessions_per_chat: u32` to `TelegramConfig` in `synapse-core/src/config.rs` (serde default `10`)
-- [ ] 18.2 Move `chrono` from dev-dependencies to dependencies in `synapse-telegram/Cargo.toml`
-- [ ] 18.3 Create `synapse-telegram/src/commands.rs` — `Command` enum (BotCommands derive) + 6 handlers: `/help`, `/new`, `/history`, `/list`, `/switch N`, `/delete N`
-- [ ] 18.4 Update `synapse-telegram/src/main.rs` — branched dispatcher, `Me` injection, `set_my_commands`, `rebuild_chat_map` multi-session fix
-- [ ] 18.5 Add per-chat session cap enforcement in `/new` command (auto-delete oldest when over `max_sessions_per_chat`)
-- [ ] 18.6 Add unit tests for command logic, `rebuild_chat_map` multi-session, config deserialization
+- [x] 18.1 Add `max_sessions_per_chat: u32` to `TelegramConfig` in `synapse-core/src/config.rs` (serde default `10`)
+- [x] 18.2 Move `chrono` from dev-dependencies to dependencies in `synapse-telegram/Cargo.toml`
+- [x] 18.3 Create `synapse-telegram/src/commands.rs` — `Command` enum (BotCommands derive) + 6 handlers: `/help`, `/new`, `/history`, `/list`, `/switch N`, `/delete N`
+- [x] 18.4 Update `synapse-telegram/src/main.rs` — branched dispatcher, `Me` injection, `set_my_commands`, `rebuild_chat_map` multi-session fix
+- [x] 18.5 Add per-chat session cap enforcement in `/new` command (auto-delete oldest when over `max_sessions_per_chat`)
+- [x] 18.6 Add unit tests for command logic, `rebuild_chat_map` multi-session, config deserialization
 
 **Test:** Send `/help`, `/new`, `/list`, `/switch 1`, `/delete 1` to the bot and verify correct responses; verify session cap evicts oldest session when exceeded.
 
@@ -345,13 +345,13 @@ configured directory with correct rotation and file count limits.
 
 **Goal:** Fix slash commands that fall through to the LLM instead of being handled by the dispatcher, and add inline keyboard UX for `/switch` and `/delete` when used without an argument.
 
-- [ ] 19.1 Change `Switch(usize)` → `Switch(String)` and `Delete(usize)` → `Delete(String)` in `Command` enum; add `parse_session_arg()` helper; update match arms
-- [ ] 19.2 Add `Start` variant to `Command` enum with a welcome message handler
-- [ ] 19.3 Add defensive command guard in `handlers::handle_message` — if text starts with a known command but `filter_command` missed it, reply with a hint instead of forwarding to the LLM
-- [ ] 19.4 Add `build_session_keyboard()`, `cmd_switch_keyboard()`, and `cmd_delete_keyboard()` in `commands.rs` — `InlineKeyboardMarkup` with one button per session, callback data `"action:index"`
-- [ ] 19.5 Add `handle_callback()` in `commands.rs` for `CallbackQuery` updates; refactor switch/delete core logic into `do_switch()`/`do_delete()` returning `String` so both slash-command and callback paths share the same logic
-- [ ] 19.6 Restructure dispatcher in `main.rs`: wrap in `dptree::entry()` with two branches — `Update::filter_message()` (existing) and `Update::filter_callback_query()` → `handle_callback`
-- [ ] 19.7 Add unit tests for `parse_session_arg`, `build_session_keyboard` callback data format, and defensive guard logic
+- [x] 19.1 Change `Switch(usize)` → `Switch(String)` and `Delete(usize)` → `Delete(String)` in `Command` enum; add `parse_session_arg()` helper; update match arms
+- [x] 19.2 Add `Start` variant to `Command` enum with a welcome message handler
+- [x] 19.3 Add defensive command guard in `handlers::handle_message` — if text starts with a known command but `filter_command` missed it, reply with a hint instead of forwarding to the LLM
+- [x] 19.4 Add `build_session_keyboard()`, `cmd_switch_keyboard()`, and `cmd_delete_keyboard()` in `commands.rs` — `InlineKeyboardMarkup` with one button per session, callback data `"action:index"`
+- [x] 19.5 Add `handle_callback()` in `commands.rs` for `CallbackQuery` updates; refactor switch/delete core logic into `do_switch()`/`do_delete()` returning `String` so both slash-command and callback paths share the same logic
+- [x] 19.6 Restructure dispatcher in `main.rs`: wrap in `dptree::entry()` with two branches — `Update::filter_message()` (existing) and `Update::filter_callback_query()` → `handle_callback`
+- [x] 19.7 Add unit tests for `parse_session_arg`, `build_session_keyboard` callback data format, and defensive guard logic
 
 **Test:** `/help` returns the command list (not an LLM response); `/switch` with no argument shows a clickable session list; tapping a button switches/deletes the session and removes the keyboard; `/start` shows a welcome message; unknown commands are not forwarded to the LLM.
 

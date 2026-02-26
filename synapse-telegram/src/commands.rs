@@ -8,7 +8,8 @@
 use std::sync::Arc;
 
 use chrono::TimeZone;
-use synapse_core::session::Session;
+use synapse_core::message::Role;
+use synapse_core::session::{Session, StoredMessage};
 use synapse_core::{Config, SessionStore, SessionSummary};
 use teloxide::payloads::SendMessageSetters;
 use teloxide::prelude::*;
@@ -34,7 +35,7 @@ pub enum Command {
     #[command(description = "Start a new session")]
     New,
     /// Display the conversation history of the current session.
-    #[command(description = "Show conversation history")]
+    #[command(description = "Show recent messages")]
     History,
     /// List all sessions for this chat.
     #[command(description = "List all sessions")]
@@ -78,6 +79,52 @@ pub async fn handle_command(
         Command::Switch(ref arg) => cmd_switch(&bot, &msg, arg, &storage, &chat_map).await,
         Command::Delete(ref arg) => cmd_delete(&bot, &msg, arg, &config, &storage, &chat_map).await,
     }
+}
+
+/// Truncate content to `max_chars` Unicode characters.
+///
+/// If the content exceeds `max_chars`, the result is the first `max_chars`
+/// characters followed by `...` (three ASCII dots). Content at or below
+/// the limit is returned unchanged.
+fn truncate_content(content: &str, max_chars: usize) -> String {
+    if content.chars().count() <= max_chars {
+        content.to_string()
+    } else {
+        let truncated: String = content.chars().take(max_chars).collect();
+        format!("{}...", truncated)
+    }
+}
+
+/// Format stored messages into a compact history string.
+///
+/// Filters to `Role::User` and `Role::Assistant` only, takes the last 10
+/// messages (chronologically most recent), and formats each as:
+/// `[role_label] timestamp\ntruncated_content\n\n`
+///
+/// Returns an empty string if no User/Assistant messages exist.
+fn format_history(messages: &[StoredMessage]) -> String {
+    let filtered: Vec<&StoredMessage> = messages
+        .iter()
+        .filter(|m| matches!(m.role, Role::User | Role::Assistant))
+        .collect();
+    let skip = filtered.len().saturating_sub(10);
+    let recent = &filtered[skip..];
+
+    let mut output = String::new();
+    for m in recent {
+        let role_label = match m.role {
+            Role::User => "You",
+            Role::Assistant => "Assistant",
+            _ => unreachable!(), // filtered above
+        };
+        let timestamp = chrono::Utc
+            .from_utc_datetime(&m.timestamp.naive_utc())
+            .format("%Y-%m-%d %H:%M")
+            .to_string();
+        let content = truncate_content(&m.content, 150);
+        output.push_str(&format!("[{}] {}\n{}\n\n", role_label, timestamp, content));
+    }
+    output
 }
 
 /// Send a welcome message for new users or re-opening the bot.
@@ -207,29 +254,12 @@ async fn cmd_history(
     };
 
     let messages = storage.get_messages(session_id).await.unwrap_or_default();
+    let output = format_history(&messages);
 
-    if messages.is_empty() {
+    if output.is_empty() {
         bot.send_message(msg.chat.id, "No messages in current session.")
             .await?;
         return Ok(());
-    }
-
-    let mut output = String::new();
-    for m in &messages {
-        let role_label = match m.role {
-            synapse_core::message::Role::User => "You",
-            synapse_core::message::Role::Assistant => "Assistant",
-            synapse_core::message::Role::System => "System",
-            synapse_core::message::Role::Tool => "Tool",
-        };
-        let timestamp = chrono::Utc
-            .from_utc_datetime(&m.timestamp.naive_utc())
-            .format("%Y-%m-%d %H:%M")
-            .to_string();
-        output.push_str(&format!(
-            "[{}] {}\n{}\n\n",
-            role_label, timestamp, m.content
-        ));
     }
 
     for chunk in chunk_message(output.trim()) {
@@ -679,6 +709,175 @@ mod tests {
     use chrono::Utc;
 
     use super::*;
+
+    // --- Test helpers ---
+
+    fn make_stored_message(role: Role, content: &str) -> StoredMessage {
+        StoredMessage::new(Uuid::new_v4(), role, content)
+    }
+
+    // --- truncate_content ---
+
+    #[test]
+    fn test_truncate_content_short() {
+        let content = "0123456789"; // 10 chars
+        let result = truncate_content(content, 150);
+        assert_eq!(result, content);
+        assert!(!result.ends_with("..."));
+    }
+
+    #[test]
+    fn test_truncate_content_exact_limit() {
+        let content = "a".repeat(150);
+        let result = truncate_content(&content, 150);
+        assert_eq!(result, content);
+        assert!(
+            !result.ends_with("..."),
+            "Exact limit should not be truncated"
+        );
+    }
+
+    #[test]
+    fn test_truncate_content_over_limit() {
+        let content = "a".repeat(151);
+        let result = truncate_content(&content, 150);
+        assert_eq!(result.chars().count(), 153); // 150 chars + 3 dots
+        assert!(result.ends_with("..."));
+        assert_eq!(&result[..150], "a".repeat(150));
+    }
+
+    #[test]
+    fn test_truncate_content_long() {
+        let content = "b".repeat(500);
+        let result = truncate_content(&content, 150);
+        assert_eq!(result.chars().count(), 153);
+        assert!(result.ends_with("..."));
+    }
+
+    #[test]
+    fn test_truncate_content_empty() {
+        let result = truncate_content("", 150);
+        assert_eq!(result, "");
+        assert!(!result.ends_with("..."));
+    }
+
+    // --- format_history ---
+
+    #[test]
+    fn test_format_history_filters_system_and_tool() {
+        let messages = vec![
+            make_stored_message(Role::User, "user msg"),
+            make_stored_message(Role::Assistant, "assistant msg"),
+            make_stored_message(Role::System, "system prompt"),
+            make_stored_message(Role::Tool, "tool result"),
+        ];
+        let output = format_history(&messages);
+        assert!(output.contains("You"), "Should contain 'You'");
+        assert!(output.contains("Assistant"), "Should contain 'Assistant'");
+        assert!(!output.contains("System"), "Should NOT contain 'System'");
+        assert!(!output.contains("Tool"), "Should NOT contain 'Tool'");
+    }
+
+    #[test]
+    fn test_format_history_keeps_user_and_assistant() {
+        let mut messages = Vec::new();
+        for i in 0..3 {
+            messages.push(make_stored_message(Role::User, &format!("user {}", i)));
+            messages.push(make_stored_message(
+                Role::Assistant,
+                &format!("assistant {}", i),
+            ));
+        }
+        let output = format_history(&messages);
+        for i in 0..3 {
+            assert!(output.contains(&format!("user {}", i)));
+            assert!(output.contains(&format!("assistant {}", i)));
+        }
+    }
+
+    #[test]
+    fn test_format_history_last_10_limit() {
+        // 15 messages with unique, non-overlapping content markers.
+        // "early-N" for the first 5, "recent-N" for the last 10.
+        let mut messages: Vec<StoredMessage> = Vec::new();
+        for i in 1..=5 {
+            let role = if i % 2 == 0 {
+                Role::Assistant
+            } else {
+                Role::User
+            };
+            messages.push(make_stored_message(role, &format!("early-{}", i)));
+        }
+        for i in 1..=10 {
+            let role = if i % 2 == 0 {
+                Role::Assistant
+            } else {
+                Role::User
+            };
+            messages.push(make_stored_message(role, &format!("recent-{}", i)));
+        }
+        let output = format_history(&messages);
+        // First 5 (early-1 through early-5) must be absent.
+        for i in 1..=5 {
+            assert!(
+                !output.contains(&format!("early-{}", i)),
+                "early-{} should be absent (not in last 10)",
+                i
+            );
+        }
+        // Last 10 (recent-1 through recent-10) must be present.
+        for i in 1..=10 {
+            assert!(
+                output.contains(&format!("recent-{}", i)),
+                "recent-{} should be present (in last 10)",
+                i
+            );
+        }
+    }
+
+    #[test]
+    fn test_format_history_fewer_than_10() {
+        let messages = vec![
+            make_stored_message(Role::User, "first"),
+            make_stored_message(Role::Assistant, "second"),
+            make_stored_message(Role::User, "third"),
+        ];
+        let output = format_history(&messages);
+        assert!(output.contains("first"));
+        assert!(output.contains("second"));
+        assert!(output.contains("third"));
+    }
+
+    #[test]
+    fn test_format_history_empty() {
+        let messages = vec![
+            make_stored_message(Role::System, "system only"),
+            make_stored_message(Role::Tool, "tool only"),
+        ];
+        let output = format_history(&messages);
+        assert_eq!(
+            output, "",
+            "Only System/Tool messages should yield empty string"
+        );
+    }
+
+    #[test]
+    fn test_format_history_truncates_long_content() {
+        let long_content = "x".repeat(200);
+        let messages = vec![make_stored_message(Role::Assistant, &long_content)];
+        let output = format_history(&messages);
+        // The formatted content portion should be truncated (150 chars + "...")
+        assert!(
+            output.contains("..."),
+            "Long content should be truncated with ..."
+        );
+        // Find content line (second line of the entry)
+        let content_line = output.lines().nth(1).unwrap_or("");
+        assert!(
+            content_line.chars().count() <= 153,
+            "Truncated content portion should be at most 153 chars (150 + ...)"
+        );
+    }
 
     // --- parse_session_arg ---
 
