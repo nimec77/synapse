@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `/history` now shows the last 10 user/assistant messages (truncated to 150 chars) instead of dumping the full conversation.
+
 ## [0.19.0] - 2026-02-26
 
 ### Added
