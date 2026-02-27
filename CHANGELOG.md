@@ -9,10 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **SY-21: Module splits** — Tests extracted into dedicated `tests.rs` submodules for
-  `config`, `provider/openai_compat`, `storage/sqlite`, `commands`, and `startup`; OpenAI-compatible
-  API types moved to `provider/openai_compat/types.rs`; `startup.rs` extracted from
-  `synapse-telegram/src/main.rs`. Zero behaviour changes; all 304 tests pass.
+- **SY-21: Module splits (phase 2)** — Continued internal restructuring following the Rust 2018+
+  convention (no `mod.rs` files). Zero external behaviour changes; all 304 tests pass.
+  - **`openai_compat/types.rs`** (new): all serde request/response structs (`ApiMessage`,
+    `ApiRequest`, `StreamingApiRequest`, `OaiToolCall`, `OaiTool`, `OaiToolFunction`) and the
+    `SSE_DONE_MARKER` constant extracted from `openai_compat.rs` into a dedicated submodule with
+    `pub(in super::super)` visibility; `openai_compat.rs` now contains only logic, not data types.
+  - **`synapse-telegram/src/startup.rs`** (new): `resolve_bot_token()` and `rebuild_chat_map()`
+    extracted from `main.rs`; `main.rs` reduced to wiring and the dispatcher loop only.
+  - **Test submodules**: inline `#[cfg(test)]` blocks moved to dedicated `tests.rs` files in
+    `synapse-core/src/config/`, `synapse-core/src/provider/openai_compat/`,
+    `synapse-core/src/storage/sqlite/`, `synapse-telegram/src/commands/`, and
+    `synapse-telegram/src/startup/`; each parent module declares `#[cfg(test)] mod tests;`.
 
 ## [0.21.0] - 2026-02-27
 
