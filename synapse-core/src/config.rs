@@ -170,6 +170,18 @@ impl Default for TelegramConfig {
     }
 }
 
+/// Log rotation strategy.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Rotation {
+    /// Rotate logs once per day.
+    Daily,
+    /// Rotate logs once per hour.
+    Hourly,
+    /// Never rotate logs.
+    Never,
+}
+
 /// File-based logging configuration with rotation.
 ///
 /// Deserialized from the `[logging]` section in `config.toml`.
@@ -185,9 +197,9 @@ pub struct LoggingConfig {
     #[serde(default = "default_max_files")]
     pub max_files: usize,
 
-    /// Rotation strategy: "daily", "hourly", or "never".
+    /// Rotation strategy: `daily`, `hourly`, or `never`.
     #[serde(default = "default_rotation")]
-    pub rotation: String,
+    pub rotation: Rotation,
 }
 
 fn default_log_directory() -> String {
@@ -198,8 +210,8 @@ fn default_max_files() -> usize {
     7
 }
 
-fn default_rotation() -> String {
-    "daily".to_string()
+fn default_rotation() -> Rotation {
+    Rotation::Daily
 }
 
 impl Default for LoggingConfig {
@@ -719,7 +731,7 @@ max_sessions_per_chat = 5
         let lc = LoggingConfig::default();
         assert_eq!(lc.directory, "logs");
         assert_eq!(lc.max_files, 7);
-        assert_eq!(lc.rotation, "daily");
+        assert_eq!(lc.rotation, Rotation::Daily);
     }
 
     #[test]
@@ -747,7 +759,7 @@ rotation = "hourly"
         let lc = config.logging.unwrap();
         assert_eq!(lc.directory, "/var/log/synapse");
         assert_eq!(lc.max_files, 30);
-        assert_eq!(lc.rotation, "hourly");
+        assert_eq!(lc.rotation, Rotation::Hourly);
     }
 
     #[test]
@@ -761,7 +773,7 @@ directory = "/tmp/logs"
         let lc = config.logging.unwrap();
         assert_eq!(lc.directory, "/tmp/logs");
         assert_eq!(lc.max_files, 7); // default
-        assert_eq!(lc.rotation, "daily"); // default
+        assert_eq!(lc.rotation, Rotation::Daily); // default
     }
 
     #[test]
@@ -774,7 +786,27 @@ directory = "/tmp/logs"
         let lc = config.logging.unwrap();
         assert_eq!(lc.directory, "logs"); // default
         assert_eq!(lc.max_files, 7); // default
-        assert_eq!(lc.rotation, "daily"); // default
+        assert_eq!(lc.rotation, Rotation::Daily); // default
+    }
+
+    // Rotation enum deserialization tests.
+
+    #[test]
+    fn test_rotation_deserialize_daily() {
+        let lc: LoggingConfig = toml::from_str("rotation = \"daily\"").unwrap();
+        assert_eq!(lc.rotation, Rotation::Daily);
+    }
+
+    #[test]
+    fn test_rotation_deserialize_hourly() {
+        let lc: LoggingConfig = toml::from_str("rotation = \"hourly\"").unwrap();
+        assert_eq!(lc.rotation, Rotation::Hourly);
+    }
+
+    #[test]
+    fn test_rotation_deserialize_never() {
+        let lc: LoggingConfig = toml::from_str("rotation = \"never\"").unwrap();
+        assert_eq!(lc.rotation, Rotation::Never);
     }
 
     #[test]

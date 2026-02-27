@@ -8,11 +8,12 @@
 
 use std::pin::Pin;
 
+use async_trait::async_trait;
 use eventsource_stream::Eventsource;
 use futures::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 
-use super::{ProviderError, StreamEvent};
+use super::{LlmProvider, ProviderError, StreamEvent};
 use crate::mcp::ToolDefinition;
 use crate::message::{Message, Role, ToolCallData};
 
@@ -313,7 +314,7 @@ pub(super) fn to_oai_tools(tools: &[ToolDefinition]) -> Option<Vec<OaiTool>> {
 /// and [`StreamEvent::Done`] when the stream ends.
 pub(super) fn stream_sse(
     client: reqwest::Client,
-    endpoint: &'static str,
+    endpoint: String,
     api_key: String,
     model: String,
     messages: Vec<Message>,
@@ -331,7 +332,7 @@ pub(super) fn stream_sse(
         };
 
         let response = client
-            .post(endpoint)
+            .post(&endpoint)
             .header("Authorization", format!("Bearer {}", api_key))
             .header("Content-Type", "application/json")
             .json(&request)
@@ -399,6 +400,89 @@ pub(super) fn stream_sse(
         tracing::debug!(endpoint, "openai_compat: SSE stream ended");
         yield Ok(StreamEvent::Done);
     })
+}
+
+// ---------------------------------------------------------------------------
+// Generic OpenAI-compatible provider struct
+// ---------------------------------------------------------------------------
+
+/// Generic provider for OpenAI-compatible Chat Completions APIs.
+///
+/// Holds the base URL, API key, model, and max tokens. Implements all
+/// `LlmProvider` methods using the shared helpers in this module.
+pub(super) struct OpenAiCompatProvider {
+    pub(super) client: reqwest::Client,
+    pub(super) base_url: String,
+    pub(super) api_key: String,
+    pub(super) model: String,
+    pub(super) max_tokens: u32,
+}
+
+impl OpenAiCompatProvider {
+    /// Create a new [`OpenAiCompatProvider`].
+    pub(super) fn new(
+        base_url: impl Into<String>,
+        api_key: impl Into<String>,
+        model: impl Into<String>,
+        max_tokens: u32,
+    ) -> Self {
+        Self {
+            client: reqwest::Client::new(),
+            base_url: base_url.into(),
+            api_key: api_key.into(),
+            model: model.into(),
+            max_tokens,
+        }
+    }
+}
+
+#[async_trait]
+impl LlmProvider for OpenAiCompatProvider {
+    async fn complete(&self, messages: &[Message]) -> Result<Message, ProviderError> {
+        let api_messages = build_api_messages(messages);
+        let request = ApiRequest {
+            model: self.model.clone(),
+            messages: api_messages,
+            max_tokens: self.max_tokens,
+            tools: None,
+            tool_choice: None,
+        };
+        complete_request(&self.client, &self.base_url, &self.api_key, &request).await
+    }
+
+    async fn complete_with_tools(
+        &self,
+        messages: &[Message],
+        tools: &[ToolDefinition],
+    ) -> Result<Message, ProviderError> {
+        let api_messages = build_api_messages(messages);
+        let request = ApiRequest {
+            model: self.model.clone(),
+            messages: api_messages,
+            max_tokens: self.max_tokens,
+            tools: to_oai_tools(tools),
+            tool_choice: if tools.is_empty() {
+                None
+            } else {
+                Some("auto".to_string())
+            },
+        };
+        complete_request(&self.client, &self.base_url, &self.api_key, &request).await
+    }
+
+    fn stream(
+        &self,
+        messages: &[Message],
+    ) -> Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send + '_>> {
+        stream_sse(
+            self.client.clone(),
+            self.base_url.clone(),
+            self.api_key.clone(),
+            self.model.clone(),
+            messages.to_vec(),
+            self.max_tokens,
+        )
+    }
 }
 
 // ---------------------------------------------------------------------------

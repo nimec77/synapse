@@ -2,6 +2,7 @@
 
 mod commands;
 mod repl;
+mod session;
 
 use std::io::{self, IsTerminal, Read, Write};
 use std::path::PathBuf;
@@ -12,10 +13,7 @@ use futures::StreamExt;
 use uuid::Uuid;
 
 use commands::{Commands, handle_command};
-use synapse_core::{
-    Agent, Config, Message, Role, Session, StoredMessage, StreamEvent, create_storage,
-    init_mcp_client,
-};
+use synapse_core::{Agent, Config, Message, Role, StoredMessage, StreamEvent, init_mcp_client};
 
 /// Synapse CLI - AI agent command-line interface
 #[derive(Parser)]
@@ -68,17 +66,13 @@ async fn main() -> Result<()> {
     // Handle REPL mode
     if args.repl {
         let session_config = config.session.clone().unwrap_or_default();
-        let storage = create_storage(session_config.database_url.as_deref())
-            .await
-            .context("Failed to create storage")?;
-
-        if session_config.auto_cleanup {
-            let _ = storage.cleanup(&session_config).await;
-        }
+        let storage = session::init_storage(&session_config).await?;
+        let (session, history) =
+            session::load_or_create_session(storage.as_ref(), &config, args.session).await?;
 
         let mcp_path = config.mcp.as_ref().and_then(|m| m.config_path.as_deref());
         let mcp_client = init_mcp_client(mcp_path).await;
-        return repl::run_repl(&config, storage, args.session, mcp_client).await;
+        return repl::run_repl(&config, storage, session, history, mcp_client).await;
     }
 
     // Get message or show help
@@ -93,39 +87,11 @@ async fn main() -> Result<()> {
 
     // Create storage with config database_url
     let session_config = config.session.clone().unwrap_or_default();
-    let storage = create_storage(session_config.database_url.as_deref())
-        .await
-        .context("Failed to create storage")?;
-
-    // Run auto-cleanup if enabled
-    if session_config.auto_cleanup {
-        let _ = storage.cleanup(&session_config).await;
-    }
+    let storage = session::init_storage(&session_config).await?;
 
     // Load or create session
-    let (session, history) = if let Some(session_id) = args.session {
-        // Continue existing session
-        let session = storage
-            .get_session(session_id)
-            .await
-            .context("Failed to get session")?
-            .ok_or_else(|| anyhow::anyhow!("Session not found: {}", session_id))?;
-
-        let messages = storage
-            .get_messages(session_id)
-            .await
-            .context("Failed to get messages")?;
-
-        (session, messages)
-    } else {
-        // Create new session
-        let session = Session::new(&config.provider, &config.model);
-        storage
-            .create_session(&session)
-            .await
-            .context("Failed to create session")?;
-        (session, Vec::new())
-    };
+    let (session, history) =
+        session::load_or_create_session(storage.as_ref(), &config, args.session).await?;
 
     // Build conversation history
     let mut messages: Vec<Message> = history
@@ -226,7 +192,6 @@ fn get_message(args: &Args) -> io::Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use commands::truncate;
 
     #[test]
     fn test_args_parse() {
@@ -253,14 +218,6 @@ mod tests {
         let id = Uuid::new_v4();
         let args = Args::parse_from(["synapse", "-s", &id.to_string(), "Hello"]);
         assert_eq!(args.session, Some(id));
-    }
-
-    #[test]
-    fn test_truncate() {
-        assert_eq!(truncate("hello", 10), "hello");
-        assert_eq!(truncate("hello world", 8), "hello...");
-        assert_eq!(truncate("hi", 2), "hi");
-        assert_eq!(truncate("hello", 3), "...");
     }
 
     #[test]

@@ -4,21 +4,21 @@
 
 ## Tasks
 
-- [ ] 21.1 Unified `truncate` in synapse-core
+- [x] 21.1 Unified `truncate` in synapse-core
   - Create `synapse-core/src/text.rs` with a single char-safe `truncate(s, max_chars)` function
   - Delete duplicate truncation logic from `synapse-cli/src/commands.rs`, `synapse-telegram/src/commands.rs`, and `synapse-core/src/storage/sqlite.rs`
   - Remove duplicate `test_truncate` unit test from `synapse-cli/src/main.rs`
 
-- [ ] 21.2 Consolidate DeepSeek/OpenAI into `OpenAiCompatProvider`
+- [x] 21.2 Consolidate DeepSeek/OpenAI into `OpenAiCompatProvider`
   - Add a generic `OpenAiCompatProvider` struct to `openai_compat.rs` that holds base URL, API key, model, and max tokens
   - Implement all `LlmProvider` methods on `OpenAiCompatProvider` using the shared helpers
   - Rewrite `deepseek.rs` and `openai.rs` as newtypes delegating all trait methods to `OpenAiCompatProvider`
 
-- [ ] 21.3 CLI session helper deduplication
+- [x] 21.3 CLI session helper deduplication
   - Extract `load_or_create_session()` shared between `main.rs` and `repl.rs` into a common helper
   - Extract `init_storage()` consolidating storage initialisation + cleanup (duplicated twice in `main.rs`)
 
-- [ ] 21.4 Telegram deduplication
+- [x] 21.4 Telegram deduplication
   - Extract `check_auth(msg, allowed_users)` helper to replace inline auth checks in `handlers.rs` and `commands.rs`
   - Extract `tg_session_name(chat_id)` helper replacing ad-hoc `format!("tg:{chat_id}")` strings
   - Add `NO_SESSIONS_HINT` constant for the repeated "no sessions" reply string
@@ -26,20 +26,20 @@
   - Merge `cmd_switch_keyboard` and `cmd_delete_keyboard` into a single `build_action_keyboard(action, sessions)` helper
   - Have `cmd_list` call `fetch_chat_sessions` instead of duplicating session-fetch logic
 
-- [ ] 21.5 Dead code removal and constant extraction
+- [x] 21.5 Dead code removal and constant extraction
   - Remove `stream_with_tools()` from the `LlmProvider` trait (never called by `Agent`)
   - Extract named constants: `PREVIEW_MAX_CHARS`, `HISTORY_MESSAGE_LIMIT`, `LIST_PREVIEW_MAX_CHARS`, `KEYBOARD_PREVIEW_MAX_CHARS`
 
-- [ ] 21.6 Type safety improvements
+- [x] 21.6 Type safety improvements
   - Replace `rotation: String` in `LoggingConfig` with a `Rotation` enum (`Daily`, `Hourly`, `Never`) and derive `Deserialize`
   - Remove `Arc<Box<dyn SessionStore>>` double indirection in the Telegram crate; use `Arc<dyn SessionStore>` directly
 
-- [ ] 21.7 Small polish
+- [x] 21.7 Small polish
   - Extract the REPL layout split ratio into a named constant (e.g. `REPL_LAYOUT_SPLIT`)
   - Add `ChatSessions::new(session_id)` constructor to replace repeated struct literal construction
   - Replace `Ok(r) | Err(r) => r` ad-hoc patterns with `.unwrap_or_else(|e| e)` where applicable
 
-- [ ] 21.8 Split large modules
+- [x] 21.8 Split large modules
   - Split `synapse-telegram/src/commands.rs` (706 lines) into `commands.rs` (slash command handlers) + `commands/keyboard.rs` (keyboard builders and callback logic)
   - Split `synapse-telegram/src/format.rs` (447 lines) into `format.rs` (`md_to_telegram_html`, `escape_html`) + `format/chunk.rs` (`chunk_html`, tag-balancing internals)
   - Split `synapse-core/src/provider/anthropic.rs` (407 lines) into `anthropic.rs` (provider impl) + `anthropic/types.rs` (serde request/response structs)

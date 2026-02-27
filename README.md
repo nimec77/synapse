@@ -317,11 +317,6 @@ pub trait LlmProvider: Send + Sync {
     async fn complete_with_tools(
         &self, messages: &[Message], tools: &[ToolDefinition],
     ) -> Result<Message, ProviderError>;
-
-    // Default: delegates to stream(), ignoring tools.
-    fn stream_with_tools(
-        &self, messages: &[Message], tools: &[ToolDefinition],
-    ) -> Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send + '_>>;
 }
 ```
 

@@ -10,6 +10,7 @@ pub mod message;
 pub mod provider;
 pub mod session;
 pub mod storage;
+pub mod text;
 
 pub use agent::{Agent, AgentError};
 pub use config::{Config, TelegramConfig};
