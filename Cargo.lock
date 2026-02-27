@@ -3496,7 +3496,7 @@ dependencies = [
 
 [[package]]
 name = "synapse-cli"
-version = "0.21.0"
+version = "0.21.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3513,7 +3513,7 @@ dependencies = [
 
 [[package]]
 name = "synapse-core"
-version = "0.21.0"
+version = "0.21.1"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -3535,7 +3535,7 @@ dependencies = [
 
 [[package]]
 name = "synapse-telegram"
-version = "0.21.0"
+version = "0.21.1"
 dependencies = [
  "anyhow",
  "async-trait",

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.1] - 2026-02-27
+
 ### Changed
 
 - **SY-21: Module splits (phase 2)** — Continued internal restructuring following the Rust 2018+
