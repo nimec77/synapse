@@ -34,7 +34,7 @@
 | 17. Configurable max_tokens (SY-18) | ✅ Complete | 4/4 |
 | 18. Telegram Bot Commands (SY-19) | ✅ Complete | 6/6 |
 | 19. Telegram Command Fixes & Interactive Keyboards (SY-20) | ✅ Complete | 7/7 |
-| 20. Improve /history Command (SY-20) | ⬜ Not Started | 0/4 |
+| 20. Improve /history Command (SY-20) | ✅ Complete | 4/4 |
 | 21. Code Refactoring II (SY-21) | ⬜ Not Started | 0/8 |
 
 **Legend:** ⬜ Not Started | 🔄 In Progress | ✅ Complete | ⏸️ Blocked
@@ -372,10 +372,10 @@ configured directory with correct rotation and file count limits.
 
 **Goal:** Replace the full message dump in `/history` with a compact "last 10 messages" view, filtering out System/Tool roles and truncating content.
 
-- [ ] 20.1 Update `cmd_history` in `synapse-telegram/src/commands.rs`: filter to `User`/`Assistant` roles only, take last 10, truncate each message content to 150 chars
-- [ ] 20.2 Update `Command::History` description from "Show conversation history" to "Show recent messages"
-- [ ] 20.3 Add unit tests for the truncation and filtering logic
-- [ ] 20.4 Update documentation: CLAUDE.md, README.md, CHANGELOG.md
+- [x] 20.1 Update `cmd_history` in `synapse-telegram/src/commands.rs`: filter to `User`/`Assistant` roles only, take last 10, truncate each message content to 150 chars
+- [x] 20.2 Update `Command::History` description from "Show conversation history" to "Show recent messages"
+- [x] 20.3 Add unit tests for the truncation and filtering logic
+- [x] 20.4 Update documentation: CLAUDE.md, README.md, CHANGELOG.md
 
 ---
 
