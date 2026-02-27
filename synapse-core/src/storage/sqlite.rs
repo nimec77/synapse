@@ -202,10 +202,11 @@ impl SessionStore for SqliteStore {
             let message_count: i32 = row.get("message_count");
             let preview: Option<String> = row.get("preview");
 
-            // Truncate preview to 50 characters
+            // Truncate preview to 50 characters (char-safe)
             let preview = preview.map(|p| {
-                if p.len() > 50 {
-                    format!("{}...", &p[..47])
+                if p.chars().count() > 50 {
+                    let truncated: String = p.chars().take(47).collect();
+                    format!("{}...", truncated)
                 } else {
                     p
                 }
@@ -666,6 +667,25 @@ mod tests {
         let summaries = store.list_sessions().await.expect("list failed");
         let preview = summaries[0].preview.as_ref().unwrap();
         assert_eq!(preview.len(), 50); // 47 chars + "..."
+        assert!(preview.ends_with("..."));
+    }
+
+    #[tokio::test]
+    async fn test_preview_truncated_multibyte_chars() {
+        let store = create_test_store().await;
+        let session = Session::new("test", "model");
+        let session_id = session.id;
+
+        store.create_session(&session).await.expect("create failed");
+
+        // 60 Cyrillic characters — each is 2 bytes, so naive byte slicing panics
+        let long_content: String = "а".repeat(60);
+        let msg = StoredMessage::new(session_id, Role::User, &long_content);
+        store.add_message(&msg).await.expect("add failed");
+
+        let summaries = store.list_sessions().await.expect("list failed");
+        let preview = summaries[0].preview.as_ref().unwrap();
+        assert_eq!(preview.chars().count(), 50); // 47 chars + "..."
         assert!(preview.ends_with("..."));
     }
 

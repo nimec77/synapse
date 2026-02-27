@@ -143,12 +143,14 @@ pub(crate) async fn handle_command(command: Commands, config_path: Option<&Path>
 
 /// Truncate a string to a maximum length, adding "..." if truncated.
 pub(crate) fn truncate(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
+    let char_count = s.chars().count();
+    if char_count <= max_len {
         s.to_string()
     } else if max_len <= 3 {
         ".".repeat(max_len)
     } else {
-        format!("{}...", &s[..max_len - 3])
+        let truncated: String = s.chars().take(max_len - 3).collect();
+        format!("{}...", truncated)
     }
 }
 
@@ -162,5 +164,14 @@ mod tests {
         assert_eq!(truncate("hello world", 8), "hello...");
         assert_eq!(truncate("hi", 2), "hi");
         assert_eq!(truncate("hello", 3), "...");
+    }
+
+    #[test]
+    fn test_truncate_multibyte_chars() {
+        // Cyrillic 'а' is 2 bytes; naive byte slicing would panic
+        let s: String = "а".repeat(20);
+        let result = truncate(&s, 10);
+        assert_eq!(result.chars().count(), 10);
+        assert!(result.ends_with("..."));
     }
 }
