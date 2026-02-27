@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-02-27
+
+### Changed
+
+- **SY-21: Code Refactoring II** — Comprehensive internal refactoring pass eliminating duplication,
+  dead code, magic values, and type-safety gaps accumulated since SY-16. Zero external behaviour
+  changes. 317 tests pass.
+  - **Unified truncation** (`synapse-core/src/text.rs`): single `pub fn truncate(s: &str,
+    max_chars: usize) -> String` using `.chars()` for multi-byte safety with a `max_chars <= 3`
+    guard. Duplicate implementations removed from `synapse-cli/src/commands.rs`,
+    `synapse-telegram/src/commands.rs`, and inline in `synapse-core/src/storage/sqlite.rs`.
+  - **Provider consolidation**: `OpenAiCompatProvider` struct added to `openai_compat.rs` with full
+    `LlmProvider` implementation using the pre-existing shared helpers. `DeepSeekProvider` and
+    `OpenAiProvider` rewritten as newtypes (`pub struct DeepSeekProvider(OpenAiCompatProvider)`)
+    delegating all trait methods to the inner type. Combined provider files reduced to ~70 lines.
+  - **CLI session helpers** (`synapse-cli/src/session.rs`): `init_storage()` and
+    `load_or_create_session()` extracted as shared async helpers. Both the REPL and one-shot CLI
+    paths now use the same init and session-load code paths.
+  - **Telegram deduplication**: `check_auth()` helper replaces 3 inline auth blocks; `tg_session_name()`
+    replaces 3 `format!("tg:{}")` sites; `NO_SESSIONS_HINT` constant replaces 6 duplicate strings;
+    `TELEGRAM_MSG_LIMIT` consolidated to a single definition in `format/chunk.rs`; `build_action_keyboard`
+    replaces the former `cmd_switch_keyboard`/`cmd_delete_keyboard` pair; `cmd_list` refactored to use
+    `fetch_chat_sessions`.
+  - **Dead code removal**: `stream_with_tools()` removed from the `LlmProvider` trait (never called
+    by `Agent`). Named constants extracted: `HISTORY_MESSAGE_LIMIT`, `HISTORY_TRUNCATE_CHARS`,
+    `LIST_PREVIEW_MAX_CHARS`, `KEYBOARD_PREVIEW_MAX_CHARS` (Telegram), and `SESSION_PREVIEW_MAX_CHARS`
+    (core storage).
+  - **Type safety**: `LoggingConfig.rotation` changed from `String` to a typed `Rotation` enum
+    (`Daily`, `Hourly`, `Never`) with `#[serde(rename_all = "lowercase")]`; invalid values now
+    produce a deserialization error at startup. `Arc<Box<dyn SessionStore>>` (15 occurrences)
+    replaced by `Arc<dyn SessionStore>` throughout the Telegram crate.
+  - **Small polish**: REPL layout constants extracted (`REPL_MIN_HISTORY_HEIGHT`,
+    `REPL_INPUT_HEIGHT`, `REPL_STATUS_HEIGHT`) in `repl/render.rs`; `ChatSessions::new(session_id)`
+    constructor added; 4 `Ok(r) | Err(r) => r` patterns replaced with `.unwrap_or_else(|e| e)`.
+  - **Module splits** (Rust 2018+ convention, no `mod.rs` files): `commands.rs` (1214 lines) →
+    `commands.rs` + `commands/keyboard.rs`; `format.rs` (702 lines) → `format.rs` +
+    `format/chunk.rs`; `anthropic.rs` (674 lines) → `anthropic.rs` + `anthropic/types.rs`.
+
 ## [0.20.0] - 2026-02-26
 
 ### Changed

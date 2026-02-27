@@ -24,11 +24,10 @@ use crossterm::{
 };
 use futures::StreamExt;
 use ratatui::layout::{Constraint, Layout};
-use uuid::Uuid;
 
 use app::{DisplayMessage, ReplApp};
 use input::{KeyAction, handle_key_event};
-use render::render_ui;
+use render::{REPL_INPUT_HEIGHT, REPL_MIN_HISTORY_HEIGHT, REPL_STATUS_HEIGHT, render_ui};
 use synapse_core::{
     Agent, AgentError, Config, McpClient, Message, Role, Session, SessionStore, StoredMessage,
     StreamEvent,
@@ -64,46 +63,23 @@ impl Drop for TerminalGuard {
 /// Entry point for the interactive REPL mode.
 ///
 /// Creates a terminal UI for multi-turn conversations with an LLM provider.
-/// Supports creating new sessions or resuming existing ones.
+/// The session and history must be resolved by the caller (via
+/// `session::load_or_create_session`) before invoking this function.
 ///
 /// # Arguments
 ///
 /// * `config` - Application configuration (provider, model, system prompt, etc.)
 /// * `storage` - Session storage for persistence
-/// * `session_id` - Optional session ID to resume; creates new if None
+/// * `session` - The session to use (already created or loaded)
+/// * `history` - Existing message history for the session
 /// * `mcp_client` - Optional MCP client for tool execution
 pub async fn run_repl(
     config: &Config,
     storage: Box<dyn SessionStore>,
-    session_id: Option<Uuid>,
+    session: Session,
+    history: Vec<StoredMessage>,
     mcp_client: Option<McpClient>,
 ) -> Result<()> {
-    // Create or load session
-    let (session, history) = match session_id {
-        Some(id) => {
-            let session = storage
-                .get_session(id)
-                .await
-                .context("Failed to get session")?
-                .ok_or_else(|| anyhow::anyhow!("Session not found: {}", id))?;
-
-            let messages = storage
-                .get_messages(id)
-                .await
-                .context("Failed to get session messages")?;
-
-            (session, messages)
-        }
-        None => {
-            let session = Session::new(&config.provider, &config.model);
-            storage
-                .create_session(&session)
-                .await
-                .context("Failed to create session")?;
-            (session, Vec::new())
-        }
-    };
-
     // Create agent from config and MCP client
     let agent = Agent::from_config(config, mcp_client).context("Failed to create agent")?;
 
@@ -144,9 +120,9 @@ pub async fn run_repl(
                 render_ui(frame, &mut app);
                 // Update history height from actual layout
                 let layout = Layout::vertical([
-                    Constraint::Min(3),
-                    Constraint::Length(3),
-                    Constraint::Length(1),
+                    Constraint::Min(REPL_MIN_HISTORY_HEIGHT),
+                    Constraint::Length(REPL_INPUT_HEIGHT),
+                    Constraint::Length(REPL_STATUS_HEIGHT),
                 ])
                 .split(frame.area());
                 history_height = layout[0].height;

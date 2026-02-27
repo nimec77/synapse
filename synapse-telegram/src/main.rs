@@ -15,6 +15,7 @@ use std::sync::Arc;
 use anyhow::Context;
 use clap::Parser;
 use handlers::{ChatSessionMap, ChatSessions};
+use synapse_core::config::Rotation;
 use synapse_core::{Agent, Config, SessionStore, SessionSummary, create_storage, init_mcp_client};
 use teloxide::prelude::*;
 use teloxide::utils::command::BotCommands;
@@ -64,18 +65,11 @@ fn init_tracing(
             return Ok(None);
         }
 
-        // Map rotation string to the tracing-appender rotation type.
-        let rotation = match lc.rotation.as_str() {
-            "daily" => tracing_appender::rolling::Rotation::DAILY,
-            "hourly" => tracing_appender::rolling::Rotation::HOURLY,
-            "never" => tracing_appender::rolling::Rotation::NEVER,
-            other => {
-                eprintln!(
-                    "Warning: Unknown rotation '{}', falling back to daily",
-                    other
-                );
-                tracing_appender::rolling::Rotation::DAILY
-            }
+        // Map rotation enum to the tracing-appender rotation type.
+        let rotation = match lc.rotation {
+            Rotation::Daily => tracing_appender::rolling::Rotation::DAILY,
+            Rotation::Hourly => tracing_appender::rolling::Rotation::HOURLY,
+            Rotation::Never => tracing_appender::rolling::Rotation::NEVER,
         };
 
         // Build the rolling file appender.
@@ -138,7 +132,7 @@ async fn main() -> anyhow::Result<()> {
         .as_ref()
         .and_then(|s| s.database_url.as_deref());
 
-    let storage: Arc<Box<dyn SessionStore>> = Arc::new(
+    let storage: Arc<dyn SessionStore> = Arc::from(
         create_storage(db_url)
             .await
             .context("Failed to initialize session storage")?,
@@ -170,7 +164,7 @@ async fn main() -> anyhow::Result<()> {
         Arc::new(Agent::from_config(&config, mcp_client).context("Failed to create agent")?);
 
     // 9. Rebuild chat-to-session map from persisted sessions.
-    let initial_map = rebuild_chat_map(storage.as_ref().as_ref()).await;
+    let initial_map = rebuild_chat_map(storage.as_ref()).await;
     let total_sessions: usize = initial_map.values().map(|cs| cs.sessions.len()).sum();
     tracing::info!(
         "Restored {} Telegram sessions across {} chats from storage",

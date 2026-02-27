@@ -2,16 +2,23 @@
 //!
 //! Implements the [`LlmProvider`] trait for Anthropic's Messages API,
 //! enabling real Claude completions through the Synapse agent.
+//!
+//! Serde request/response structs live in the [`types`] submodule.
+
+mod types;
 
 use std::pin::Pin;
 
 use async_trait::async_trait;
 use futures::Stream;
-use serde::{Deserialize, Serialize};
 
 use super::{LlmProvider, ProviderError, StreamEvent};
 use crate::mcp::ToolDefinition;
 use crate::message::{Message, Role, ToolCallData};
+use types::{
+    AnthropicTool, ApiContent, ApiError, ApiMessage, ApiRequest, ApiResponse, ContentBlock,
+    ErrorDetail,
+};
 
 /// Anthropic API version header value.
 const ANTHROPIC_VERSION: &str = "2023-06-01";
@@ -231,105 +238,6 @@ impl AnthropicProvider {
 
         Ok(msg)
     }
-}
-
-/// Request body for Anthropic Messages API.
-#[derive(Debug, Serialize)]
-struct ApiRequest {
-    /// Model identifier.
-    model: String,
-    /// Maximum tokens to generate.
-    max_tokens: u32,
-    /// Conversation messages (user/assistant only).
-    messages: Vec<ApiMessage>,
-    /// Optional system prompt.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    system: Option<String>,
-    /// Optional tool definitions.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    tools: Option<Vec<AnthropicTool>>,
-}
-
-/// Tool definition in Anthropic API format.
-#[derive(Debug, Serialize)]
-struct AnthropicTool {
-    /// Tool name.
-    name: String,
-    /// Tool description.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    description: Option<String>,
-    /// JSON Schema for the tool's input parameters.
-    input_schema: serde_json::Value,
-}
-
-/// Content that can be either a text string or an array of content blocks.
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(untagged)]
-enum ApiContent {
-    /// Simple text content.
-    Text(String),
-    /// Array of content blocks (for tool results).
-    Blocks(Vec<ContentBlock>),
-}
-
-/// A single message in the API request.
-#[derive(Debug, Serialize)]
-struct ApiMessage {
-    /// Message role ("user" or "assistant").
-    role: String,
-    /// Message content (text or blocks).
-    content: ApiContent,
-}
-
-/// Response body from Anthropic Messages API.
-#[derive(Debug, Deserialize)]
-struct ApiResponse {
-    /// Response content blocks.
-    content: Vec<ContentBlock>,
-}
-
-/// Content block in API response.
-#[derive(Debug, Serialize, Deserialize)]
-struct ContentBlock {
-    /// Content type (e.g., "text", "tool_use", "tool_result").
-    #[serde(rename = "type")]
-    content_type: String,
-    /// Text content (present for "text" type).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    text: Option<String>,
-    /// Tool use ID (present for "tool_use" type).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    id: Option<String>,
-    /// Tool name (present for "tool_use" type).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    name: Option<String>,
-    /// Tool input (present for "tool_use" type).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    input: Option<serde_json::Value>,
-    /// Tool use ID reference (present for "tool_result" type).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    tool_use_id: Option<String>,
-    /// Tool result content (present for "tool_result" type).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    content: Option<String>,
-}
-
-/// Error response from Anthropic API.
-#[derive(Debug, Deserialize)]
-struct ApiError {
-    /// Error details.
-    error: ErrorDetail,
-}
-
-/// Error detail from API error response.
-#[derive(Debug, Deserialize)]
-#[allow(dead_code)] // Fields used for deserialization
-struct ErrorDetail {
-    /// Error type (e.g., "authentication_error").
-    #[serde(rename = "type")]
-    error_type: String,
-    /// Human-readable error message.
-    message: String,
 }
 
 #[async_trait]

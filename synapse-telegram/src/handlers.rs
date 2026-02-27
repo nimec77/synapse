@@ -15,8 +15,7 @@ use teloxide::types::{ChatAction, Message as TgMessage, ParseMode};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
-/// Telegram's maximum message length in characters.
-const TELEGRAM_MSG_LIMIT: usize = 4096;
+use crate::format::TELEGRAM_MSG_LIMIT;
 
 /// Error message sent to the user when agent or session operations fail.
 const ERROR_REPLY: &str = "Sorry, I encountered an error. Please try again.";
@@ -39,6 +38,40 @@ impl ChatSessions {
     pub fn active_session_id(&self) -> Option<Uuid> {
         self.sessions.get(self.active_idx).copied()
     }
+
+    /// Create a new `ChatSessions` with a single session at active index 0.
+    pub fn new(session_id: Uuid) -> Self {
+        Self {
+            sessions: vec![session_id],
+            active_idx: 0,
+        }
+    }
+}
+
+/// Hint message sent when a chat has no sessions.
+pub const NO_SESSIONS_HINT: &str = "No sessions. Send a message or use /new to start one.";
+
+/// Build the `"tg:<chat_id>"` session name string.
+pub fn tg_session_name(chat_id: i64) -> String {
+    format!("tg:{}", chat_id)
+}
+
+/// Check authorization for an incoming message.
+///
+/// Returns `Some(Ok(()))` to instruct the caller to return early (unauthorized).
+/// Returns `None` when the user is authorized and processing should continue.
+pub async fn check_auth(msg: &TgMessage, config: &Config) -> Option<ResponseResult<()>> {
+    let user_id = msg.from.as_ref().map(|u| u.id.0).unwrap_or(0);
+    let allowed_users = config
+        .telegram
+        .as_ref()
+        .map(|t| t.allowed_users.as_slice())
+        .unwrap_or(&[]);
+    if !is_authorized(user_id, allowed_users) {
+        Some(Ok(())) // Silent drop — do not reveal bot existence.
+    } else {
+        None
+    }
 }
 
 /// In-memory map from Telegram chat IDs to multi-session state.
@@ -59,19 +92,12 @@ pub async fn handle_message(
     msg: TgMessage,
     config: Arc<Config>,
     agent: Arc<Agent>,
-    storage: Arc<Box<dyn SessionStore>>,
+    storage: Arc<dyn SessionStore>,
     chat_map: ChatSessionMap,
 ) -> ResponseResult<()> {
     // Step 1: User authorization.
-    let user_id = msg.from.as_ref().map(|u| u.id.0).unwrap_or(0);
-    let allowed_users = config
-        .telegram
-        .as_ref()
-        .map(|t| t.allowed_users.as_slice())
-        .unwrap_or(&[]);
-
-    if !is_authorized(user_id, allowed_users) {
-        return Ok(()); // Silent drop — do not reveal bot existence.
+    if let Some(result) = check_auth(&msg, &config).await {
+        return result;
     }
 
     // Step 2: Extract text content. Non-text updates are ignored.
@@ -184,7 +210,7 @@ pub async fn handle_message(
 async fn resolve_session(
     chat_id: i64,
     config: &Config,
-    storage: &Arc<Box<dyn SessionStore>>,
+    storage: &Arc<dyn SessionStore>,
     chat_map: &ChatSessionMap,
 ) -> anyhow::Result<Uuid> {
     // Fast path: check with a read lock.
@@ -199,8 +225,7 @@ async fn resolve_session(
     }
 
     // Slow path: create a new session, with write-lock double-check.
-    let session =
-        Session::new(&config.provider, &config.model).with_name(format!("tg:{}", chat_id));
+    let session = Session::new(&config.provider, &config.model).with_name(tg_session_name(chat_id));
 
     storage
         .create_session(&session)
@@ -214,13 +239,7 @@ async fn resolve_session(
     {
         return Ok(existing_id);
     }
-    map.insert(
-        chat_id,
-        ChatSessions {
-            sessions: vec![session.id],
-            active_idx: 0,
-        },
-    );
+    map.insert(chat_id, ChatSessions::new(session.id));
     Ok(session.id)
 }
 

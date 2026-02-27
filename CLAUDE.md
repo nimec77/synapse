@@ -84,10 +84,6 @@ pub trait LlmProvider: Send + Sync {
     // Anthropic, DeepSeek, and OpenAI override this to pass tools via the API.
     async fn complete_with_tools(&self, messages: &[Message], tools: &[ToolDefinition])
         -> Result<Message, ProviderError>;
-
-    // Default: delegates to stream(), ignoring tools.
-    fn stream_with_tools(&self, messages: &[Message], tools: &[ToolDefinition])
-        -> Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send + '_>>;
 }
 ```
 

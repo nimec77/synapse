@@ -9,7 +9,7 @@ use std::pin::Pin;
 use async_trait::async_trait;
 use futures::Stream;
 
-use super::openai_compat;
+use super::openai_compat::OpenAiCompatProvider;
 use super::{LlmProvider, ProviderError, StreamEvent};
 use crate::mcp::ToolDefinition;
 use crate::message::Message;
@@ -20,16 +20,7 @@ const API_ENDPOINT: &str = "https://api.openai.com/v1/chat/completions";
 /// OpenAI LLM provider.
 ///
 /// Sends messages to the OpenAI Chat Completions API and returns responses.
-pub struct OpenAiProvider {
-    /// HTTP client for API requests.
-    client: reqwest::Client,
-    /// OpenAI API key.
-    api_key: String,
-    /// Model identifier (e.g., "gpt-4o").
-    model: String,
-    /// Maximum tokens to generate in API responses.
-    max_tokens: u32,
-}
+pub struct OpenAiProvider(pub(super) OpenAiCompatProvider);
 
 impl OpenAiProvider {
     /// Create a new OpenAI provider.
@@ -40,27 +31,19 @@ impl OpenAiProvider {
     /// * `model` - Model identifier (e.g., "gpt-4o")
     /// * `max_tokens` - Maximum tokens to generate in API responses
     pub fn new(api_key: impl Into<String>, model: impl Into<String>, max_tokens: u32) -> Self {
-        Self {
-            client: reqwest::Client::new(),
-            api_key: api_key.into(),
-            model: model.into(),
+        Self(OpenAiCompatProvider::new(
+            API_ENDPOINT,
+            api_key,
+            model,
             max_tokens,
-        }
+        ))
     }
 }
 
 #[async_trait]
 impl LlmProvider for OpenAiProvider {
     async fn complete(&self, messages: &[Message]) -> Result<Message, ProviderError> {
-        let api_messages = openai_compat::build_api_messages(messages);
-        let request = openai_compat::ApiRequest {
-            model: self.model.clone(),
-            messages: api_messages,
-            max_tokens: self.max_tokens,
-            tools: None,
-            tool_choice: None,
-        };
-        openai_compat::complete_request(&self.client, API_ENDPOINT, &self.api_key, &request).await
+        self.0.complete(messages).await
     }
 
     async fn complete_with_tools(
@@ -68,33 +51,14 @@ impl LlmProvider for OpenAiProvider {
         messages: &[Message],
         tools: &[ToolDefinition],
     ) -> Result<Message, ProviderError> {
-        let api_messages = openai_compat::build_api_messages(messages);
-        let request = openai_compat::ApiRequest {
-            model: self.model.clone(),
-            messages: api_messages,
-            max_tokens: self.max_tokens,
-            tools: openai_compat::to_oai_tools(tools),
-            tool_choice: if tools.is_empty() {
-                None
-            } else {
-                Some("auto".to_string())
-            },
-        };
-        openai_compat::complete_request(&self.client, API_ENDPOINT, &self.api_key, &request).await
+        self.0.complete_with_tools(messages, tools).await
     }
 
     fn stream(
         &self,
         messages: &[Message],
     ) -> Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send + '_>> {
-        openai_compat::stream_sse(
-            self.client.clone(),
-            API_ENDPOINT,
-            self.api_key.clone(),
-            self.model.clone(),
-            messages.to_vec(),
-            self.max_tokens,
-        )
+        self.0.stream(messages)
     }
 }
 
@@ -105,8 +69,8 @@ mod tests {
     #[test]
     fn test_openai_provider_new() {
         let provider = OpenAiProvider::new("test-key", "test-model", 4096);
-        assert_eq!(provider.api_key, "test-key");
-        assert_eq!(provider.model, "test-model");
-        assert_eq!(provider.max_tokens, 4096);
+        assert_eq!(provider.0.api_key, "test-key");
+        assert_eq!(provider.0.model, "test-model");
+        assert_eq!(provider.0.max_tokens, 4096);
     }
 }

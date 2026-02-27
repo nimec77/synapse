@@ -132,16 +132,4 @@ pub trait LlmProvider: Send + Sync {
     ) -> Result<Message, ProviderError> {
         self.complete(messages).await
     }
-
-    /// Stream response with tool definitions.
-    ///
-    /// Default implementation delegates to `stream()`, ignoring tools.
-    /// Providers that support tool calling should override this.
-    fn stream_with_tools(
-        &self,
-        messages: &[Message],
-        _tools: &[ToolDefinition],
-    ) -> Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send + '_>> {
-        self.stream(messages)
-    }
 }

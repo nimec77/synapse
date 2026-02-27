@@ -34,6 +34,9 @@ use crate::message::Role;
 use crate::session::{Session, SessionSummary, StoredMessage};
 use crate::storage::{CleanupResult, SessionStore, StorageError};
 
+/// Maximum number of characters for session preview text in `list_sessions`.
+const SESSION_PREVIEW_MAX_CHARS: usize = 50;
+
 /// SQLite-based session storage.
 ///
 /// Uses connection pooling and WAL mode for performance.
@@ -202,15 +205,8 @@ impl SessionStore for SqliteStore {
             let message_count: i32 = row.get("message_count");
             let preview: Option<String> = row.get("preview");
 
-            // Truncate preview to 50 characters (char-safe)
-            let preview = preview.map(|p| {
-                if p.chars().count() > 50 {
-                    let truncated: String = p.chars().take(47).collect();
-                    format!("{}...", truncated)
-                } else {
-                    p
-                }
-            });
+            // Truncate preview to the configured character limit (char-safe).
+            let preview = preview.map(|p| crate::text::truncate(&p, SESSION_PREVIEW_MAX_CHARS));
 
             summaries.push(SessionSummary {
                 id,

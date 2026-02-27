@@ -14,15 +14,24 @@ use ratatui::{
 use super::app::{DisplayMessage, ReplApp};
 use synapse_core::Role;
 
+/// Minimum height of the scrollable history area (in terminal rows).
+pub(super) const REPL_MIN_HISTORY_HEIGHT: u16 = 3;
+
+/// Height of the input box area (in terminal rows, including border).
+pub(super) const REPL_INPUT_HEIGHT: u16 = 3;
+
+/// Height of the status bar at the bottom (in terminal rows).
+pub(super) const REPL_STATUS_HEIGHT: u16 = 1;
+
 /// Render the UI to the terminal frame.
 pub(super) fn render_ui(frame: &mut Frame, app: &mut ReplApp) {
     let area = frame.area();
 
-    // Three-area vertical layout: history (flex), input (3 lines), status (1 line)
+    // Three-area vertical layout: history (flex), input, status
     let layout = Layout::vertical([
-        Constraint::Min(3),
-        Constraint::Length(3),
-        Constraint::Length(1),
+        Constraint::Min(REPL_MIN_HISTORY_HEIGHT),
+        Constraint::Length(REPL_INPUT_HEIGHT),
+        Constraint::Length(REPL_STATUS_HEIGHT),
     ])
     .split(area);
 
