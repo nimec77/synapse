@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **SY-21: Module splits** — Tests extracted into dedicated `tests.rs` submodules for
+  `config`, `provider/openai_compat`, `storage/sqlite`, `commands`, and `startup`; OpenAI-compatible
+  API types moved to `provider/openai_compat/types.rs`; `startup.rs` extracted from
+  `synapse-telegram/src/main.rs`. Zero behaviour changes; all 304 tests pass.
+
 ## [0.21.0] - 2026-02-27
 
 ### Changed
