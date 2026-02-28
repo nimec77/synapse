@@ -25,7 +25,7 @@ use tracing_subscriber::prelude::*;
 
 /// Synapse Telegram Bot — AI agent Telegram interface
 #[derive(Parser)]
-#[command(name = "synapse-telegram")]
+#[command(name = "synapse-telegram", version)]
 struct Args {
     /// Path to a custom config file (overrides default search locations)
     #[arg(short = 'c', long)]

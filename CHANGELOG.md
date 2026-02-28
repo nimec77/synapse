@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`synapse-telegram --version` / `-V`** — added `version` to the `#[command(...)]` clap attribute
+  in `synapse-telegram/src/main.rs`; the binary now prints `synapse-telegram <version>` and exits,
+  matching the behaviour already present in `synapse-cli`.
+
 ## [0.21.1] - 2026-02-27
 
 ### Changed
