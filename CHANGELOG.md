@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Dependency audit fix** — Updated `Cargo.lock` to resolve 7 RUSTSEC advisories:
+  `aws-lc-sys` (0.37.0 → 0.39.0), `quinn-proto` (0.11.13 → 0.11.14), and
+  `rustls-webpki` (0.103.9 → 0.103.10) patching RUSTSEC-2026-0037,
+  RUSTSEC-2026-0044 through RUSTSEC-2026-0049.
+
+### Documentation
+
+- **VPS relocation guide** (`docs/relocate-synapse.md`) — Step-by-step instructions for
+  migrating the `synapse-telegram` service to a new VPS: stopping the old service, copying
+  the SQLite database and config, setting up systemd on the target host, and verifying the bot
+  is live.
+- **`ast-index` command reference** (`.claude/rules/ast-index.md`) — Developer tooling rules
+  and command reference for the `ast-index` symbol-search tool, documenting mandatory search
+  rules, per-command timings, Rust-specific queries, and index management commands.
+
 ## [0.21.2] - 2026-02-28
 
 ### Added
