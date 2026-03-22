@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.3] - 2026-03-22
+
 ### Security
 
 - **Dependency audit fix** — Updated `Cargo.lock` to resolve 7 RUSTSEC advisories:
