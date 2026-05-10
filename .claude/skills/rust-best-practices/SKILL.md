@@ -9,9 +9,17 @@ license: MIT
 compatibility: Rust 1.70+, Cargo
 metadata:
   author: apollographql
-  version: "1.1.0"
+  version: "1.2.0"
+  last_updated: "2026-05-10"
 allowed-tools: Bash(cargo:*) Bash(rustc:*) Bash(rustfmt:*) Bash(clippy:*) Read Write Edit Glob Grep
 ---
+
+> **Version:** 1.2.0 | **Last Updated:** 2026-05-10 | **MSRV:** 1.70
+
+## When NOT to use
+
+- Beginner Rust tutorials (this assumes ownership, lifetimes, traits are already familiar).
+- Languages other than Rust.
 
 # Rust Best Practices
 

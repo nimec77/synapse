@@ -166,4 +166,10 @@ Next steps:
   git push && git push --tags
 ```
 
+Then emit, on its own final line (machine-readable for any orchestrator chaining off this skill — see `../_shared/status-markers.md`):
+
+```
+RELEASE_PUBLISHED
+```
+
 **WORKFLOW COMPLETE**

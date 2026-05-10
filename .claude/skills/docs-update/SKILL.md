@@ -2,27 +2,27 @@
 name: docs-update
 description: "Use when a ticket's implementation is complete and project documentation needs to reflect the changes"
 argument-hint: "[ticket-id]"
-allowed-tools: Read, Write, Glob, Grep
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 model: sonnet
 ---
 
-Use the `tech-writer` subagent.
+You produce the per-ticket summary and add a `CHANGELOG.md` entry once implementation is complete.
 
 ## Ticket Resolution
 
-If the ticket ID is not provided as a parameter (`$1` is empty):
-1. Read the file `docs/.active_ticket`
-2. Use the first non-empty line as the ticket ID
-3. If the file does not exist or contains no valid ticket ID, display an error message: "Error: No ticket specified. Provide a ticket ID as a parameter or set it in docs/.active_ticket" and terminate immediately.
+If `$1` is empty:
+1. Read `docs/.active_ticket`.
+2. Use the first non-empty line.
+3. If still empty: print `Error: No ticket specified. Provide a ticket ID as a parameter or set it in docs/.active_ticket` and stop.
 
-## Docs-update steps
+## Steps
 
-1. Read the artifacts for ticket `$1`:
-- `docs/prd/$1.prd.md`,
-- `docs/plan/$1.md`,
-- `docs/tasklist/$1.md`,
-- `reports/qa/$1.md` (if any).
-2. Based on these artifacts and the code diff:
-- create <ticket>-summary.md (a summary of the work done and decisions made on the ticket),
-- add an entry to `CHANGELOG.md` (a brief description of the changes).
-3. Show the diff from the user documentation.
+1. Read the ticket artifacts:
+   - `docs/prd/$1.prd.md`,
+   - `docs/plan/$1.md`,
+   - `docs/tasklist/$1.md`,
+   - `reports/qa/$1.md` (skip if absent).
+2. Inspect the implementation diff (e.g. `git diff` since the ticket branch was created or against `master`).
+3. Create `docs/summaries/$1-summary.md` using the layout in `../_shared/output-templates/summary.md`.
+4. Add an `## [Unreleased]` entry to `CHANGELOG.md`. Format: `- <one-line user-facing description> (<TICKET_ID>)`.
+5. Print the diff for the new docs/CHANGELOG content so the user can review before commit.

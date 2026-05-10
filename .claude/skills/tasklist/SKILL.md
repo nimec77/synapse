@@ -6,47 +6,26 @@ allowed-tools: Read, Write, Glob, Grep
 model: sonnet
 ---
 
-Use the `task-planner` subagent.
+You break an approved plan into a concrete tasklist that `implement-orchestrated` and `dev-cycle` can execute.
 
 ## Ticket Resolution
 
-If the ticket ID is not provided as a parameter (`$1` is empty):
-1. Read the file `docs/.active_ticket`
-2. Use the first non-empty line as the ticket ID
-3. If the file does not exist or contains no valid ticket ID, display an error message: "Error: No ticket specified. Provide a ticket ID as a parameter or set it in docs/.active_ticket" and terminate immediately.
+If `$1` is empty:
+1. Read `docs/.active_ticket`.
+2. Use the first non-empty line as the ticket ID.
+3. If still empty: print `Error: No ticket specified. Provide a ticket ID as a parameter or set it in docs/.active_ticket` and stop.
 
 ## Plan Status Check
 
-Before proceeding, read `docs/plan/$1.md` and verify it contains `Status: PLAN_APPROVED`.
-If the status is not `PLAN_APPROVED`, display an error message: "Error: Plan for ticket $1 is not approved. Run /plan to create and approve the plan first." and terminate immediately.
+Read `docs/plan/$1.md`. If it does not contain `Status: PLAN_APPROVED`, print `Error: Plan for $1 is not approved. Run /plan to create and approve the plan first.` and stop.
 
-## CRITICAL: REQUIREMENTS ARE IMMUTABLE
+## Source-of-Truth Rules
 
-**Tasks must implement what the PRD and plan specify, not what existing code does.**
+Apply the requirements-immutability rules — see `../_shared/requirements-immutability.md`. Tasks implement what the PRD/plan specify, not what existing code happens to do. Don't pre-mark tasks `[x]` based on existing code — code-vs-spec verification happens during review.
 
-### Forbidden Actions
+## Steps
 
-- ❌ Marking tasks as "complete" because existing code does something similar
-- ❌ Omitting tasks needed to fix deviations from requirements
-- ❌ Creating acceptance criteria that contradict the PRD
-
-### Required Actions
-
-- ✅ If the plan identifies deviations, create tasks to fix them
-- ✅ Acceptance criteria must match PRD requirements exactly
-- ✅ All requirements from the plan must have corresponding tasks
-
----
-
-## Tasks Steps
-
-1. Read:
-- `docs/prd/$1.prd.md`,
-- `docs/plan/$1.md`.
-2. Check if the plan identifies any **deviations to fix** — these MUST become tasks
-3. Create `docs/tasklist/$1.md`:
-- title and brief context,
-- a list of tasks with `- [ ]`,
-- for each task, 1-2 acceptance criteria **that match the PRD requirements**.
-4. **Do NOT mark tasks as complete just because code exists.** Code must match requirements.
-5. If the tasklist looks complete and covers the plan, set `Status: TASKLIST_READY`.
+1. Read `docs/prd/$1.prd.md` and `docs/plan/$1.md`.
+2. Identify any **Deviations to Fix** section in the plan; every item there must become a task.
+3. Create `docs/tasklist/$1.md` using the layout in `../_shared/tasklist-template.md`. Each task gets at least one **Acceptance** line derived from the PRD/plan.
+4. When the tasklist is complete and covers the plan, set `Status: TASKLIST_READY` (see `../_shared/status-markers.md`).

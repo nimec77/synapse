@@ -2,101 +2,46 @@
 name: research
 description: "Use when a ticket needs technical context gathered from the codebase and external sources before planning"
 argument-hint: "[ticket-id]"
-allowed-tools: Read, Write, Glob, Grep, AskUserQuestion, rust-analyzer-lsp
+allowed-tools: Read, Write, Glob, Grep, Bash, AskUserQuestion, rust-analyzer-lsp
 model: opus
 ---
 
-Use the `researcher` subagent.
+You gather technical context for a ticket so the `plan` skill has facts (not assumptions) to design from.
 
 ## Ticket Resolution
 
-If the ticket ID is not provided as a parameter (`$1` is empty):
-1. Read the file `docs/.active_ticket`
-2. Use the first non-empty line as the ticket ID
-3. If the file does not exist or contains no valid ticket ID, display an error message: "Error: No ticket specified. Provide a ticket ID as a parameter or set it in docs/.active_ticket" and terminate immediately.
+If `$1` is empty:
+1. Read `docs/.active_ticket`.
+2. Use the first non-empty line.
+3. If still empty: print `Error: No ticket specified. Provide a ticket ID as a parameter or set it in docs/.active_ticket` and stop.
 
----
+## MANDATORY: Resolve Open Questions FIRST
 
-## MANDATORY: INVOKE AskUserQuestion TOOL FIRST
+Before any research or writing, **invoke `AskUserQuestion`** to resolve every "Open Questions" entry in `docs/prd/$1.prd.md`. This is a blocking requirement — output the questions through the tool, never as plain text.
 
-**THIS IS A BLOCKING REQUIREMENT. YOU MUST NOT SKIP THIS STEP.**
+- **If the PRD lists open questions:** invoke `AskUserQuestion` for **every** one. Don't guess; don't skip.
+- **If the PRD has no open questions:** still invoke once with:
+  - question: `Are there any implementation details, constraints, or preferences I should know before researching this ticket?`
+  - header: `Preferences`
+  - options: `Use defaults` / `I have specifics`
 
-Before doing ANY research or writing ANY document:
+Only the user knows the right direction; guessing here cascades into wrong research and wrong implementation.
 
-1. Read the PRD file `docs/prd/$TICKET.prd.md`
-2. Find the "Open Questions" section
-3. **INVOKE the AskUserQuestion tool** - DO NOT output questions as text!
+## Source-of-Truth Rules
 
-### CRITICAL RULE
+Apply the requirements-immutability rules — see `../_shared/requirements-immutability.md`. Research **never** modifies the PRD or any requirements doc. Where existing code contradicts requirements, flag it under the report's `DEVIATIONS` section — do not adjust requirements to match.
 
-**NEVER output questions as plain text and wait. ALWAYS invoke the AskUserQuestion tool.**
+## Steps
 
-- WRONG: Writing "Do you have any preferences?" as text output
-- CORRECT: Calling AskUserQuestion tool with questions array
+After `AskUserQuestion` returns:
 
-### What to Ask
-
-**IF PRD has Open Questions:**
-- Invoke AskUserQuestion for EVERY question listed
-- DO NOT skip any questions
-- DO NOT guess or assume answers
-
-**IF PRD has NO Open Questions:**
-- Still invoke AskUserQuestion with this question:
-  - question: "Are there any implementation details, constraints, or preferences I should know before researching this ticket?"
-  - header: "Preferences"
-  - options: [{"label": "Use defaults", "description": "Proceed with documented requirements only"}, {"label": "I have specifics", "description": "I will provide additional details"}]
-
-**WHY THIS IS CRITICAL:**
-- Only the user knows the correct implementation approach
-- Guessing leads to WRONG research and WRONG implementation
-- The user MUST validate direction before work begins
-
-**FAILURE TO INVOKE AskUserQuestion = INCORRECT WORK**
-
----
-
-## CRITICAL: REQUIREMENTS ARE IMMUTABLE
-
-**YOU MUST NEVER MODIFY, REINTERPRET, OR CONTRADICT REQUIREMENTS.**
-
-The PRD and any referenced documentation (e.g., `docs/phase/*.md`, `docs/vision.md`) contain the **authoritative requirements**. Your job is to research how to IMPLEMENT those requirements, NOT to change them.
-
-### Forbidden Actions
-
-- ❌ Changing PRD requirements to match existing code
-- ❌ Reporting "implementation uses X" as justification to ignore requirement Y
-- ❌ Documenting existing code behavior as "resolved" when it contradicts requirements
-- ❌ Suggesting alternatives that contradict stated requirements without explicit user approval
-
-### Required Actions
-
-- ✅ If existing code contradicts requirements: Flag as "DEVIATION FROM REQUIREMENTS" and list what needs to change
-- ✅ If requirements seem infeasible: Use AskUserQuestion to get explicit approval before any deviation
-- ✅ Always treat documented requirements as the source of truth
-- ✅ Document gaps between current implementation and requirements
-
-### Example
-
-**WRONG:**
-> "Requirements mention UUID v8, but implementation uses UUID v4. This is acceptable because v4 works."
-
-**CORRECT:**
-> "DEVIATION: Requirements specify UUID v8 (docs/phase/phase-8.md), but current implementation uses UUID v4. Implementation must be updated to use UUID v8."
-
----
-
-## Research Steps (ONLY AFTER AskUserQuestion returns answers)
-
-1. Read `docs/prd/$1.prd.md` and incorporate user answers
-2. Scan key project directories (src, docs, configs) for entities and modules related to the ticket
-3. Document the following in `docs/research/$1.md`:
-   - existing endpoints and contracts,
-   - layers and dependencies,
-   - patterns used,
-   - limitations and risks,
-   - resolved questions (with user answers),
-   - any NEW technical questions discovered during research,
-   - **DEVIATIONS: any places where existing code contradicts requirements**
-4. Do not change the code; only gather information
-5. **Do not modify the PRD or any requirements documents**
+1. Read `docs/prd/$1.prd.md` and incorporate the answers.
+2. Map the relevant code surface using `ast-index` first (see `.claude/rules/ast-index.md`); fall back to `Glob`/`Grep` for string/log searches.
+3. Write `docs/research/$1.md` using the layout in `../_shared/output-templates/research.md`. Sections to cover:
+   - Resolved questions (with the user's answers).
+   - Existing endpoints, modules, and dependencies relevant to the ticket.
+   - Patterns the implementation should follow.
+   - Limitations and risks.
+   - Any **new** technical questions discovered during research.
+   - **DEVIATIONS** between current code and requirements.
+4. Do not change any code; do not modify the PRD or any requirements doc.

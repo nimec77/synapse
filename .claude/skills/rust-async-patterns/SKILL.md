@@ -1,11 +1,23 @@
 ---
 name: rust-async-patterns
-description: Master Rust async programming with Tokio, async traits, error handling, and concurrent patterns. Use when building async Rust applications, implementing concurrent systems, or debugging async code.
+description: "Use when writing or debugging async Rust with Tokio — tasks, channels, async traits, streams, graceful shutdown, or concurrent error handling"
+metadata:
+  version: "1.1.0"
+  last_updated: "2026-05-10"
+compatibility: Tokio 1.x, Rust 1.75+ (async traits stable)
 ---
 
 # Rust Async Patterns
 
+> **Version:** 1.1.0 | **Last Updated:** 2026-05-10 | **Tokio:** 1.x
+
 Production patterns for async Rust programming with Tokio runtime, including tasks, channels, streams, and error handling.
+
+## When NOT to use
+
+- Single-threaded synchronous code (use plain functions, no runtime).
+- CPU-bound work without I/O (use `rayon` or threads — async doesn't speed up pure CPU).
+- Embedded contexts where Tokio's allocator/threads aren't available (use `embassy` or hand-rolled executors instead).
 
 ## When to Use This Skill
 
