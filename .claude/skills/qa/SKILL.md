@@ -1,5 +1,6 @@
 ---
-description: "Prepare a QA plan and report for a ticket or release"
+name: qa
+description: "Use when a ticket or release needs a QA plan and report"
 argument-hint: "[ticket]"
 allowed-tools: Read, Write, Glob, Grep
 model: sonnet

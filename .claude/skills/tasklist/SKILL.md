@@ -1,5 +1,6 @@
 ---
-description: "Break down the plan for the ticket into a list of small tasks (tasklist)"
+name: tasklist
+description: "Use when a plan is approved (Status: PLAN_APPROVED) and work needs to be split into executable tasks"
 argument-hint: "[ticket-id]"
 allowed-tools: Read, Write, Glob, Grep
 model: sonnet

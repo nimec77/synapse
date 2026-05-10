@@ -1,5 +1,6 @@
 ---
-description: "Bump workspace version, update CHANGELOG, commit, and tag a release"
+name: release
+description: "Use when shipping a new version of the workspace (patch, minor, or major)"
 argument-hint: "<patch|minor|major>"
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 model: sonnet

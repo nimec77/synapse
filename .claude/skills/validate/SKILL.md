@@ -1,5 +1,6 @@
 ---
-description: "Check which quality gates have been passed for a ticket or release"
+name: validate
+description: "Use when checking which quality gates a ticket or release has passed"
 argument-hint: "[ticket-or-release-id]"
 allowed-tools: Read, Glob, Grep
 model: sonnet

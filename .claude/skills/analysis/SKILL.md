@@ -1,5 +1,6 @@
 ---
-description: "Initialize feature: create a ticket and draft the PRD"
+name: analysis
+description: "Use when starting work on a new feature ticket and no PRD exists yet"
 argument-hint: "[ticket-id] [description-file]"
 allowed-tools: Read, Write, Glob, Grep
 model: opus

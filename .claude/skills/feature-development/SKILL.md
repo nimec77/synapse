@@ -1,5 +1,6 @@
 ---
-description: "End-to-end AI-driven feature workflow: PRD -> plan -> tasks -> implementation -> review -> QA -> docs"
+name: feature-development
+description: "Use when starting a fresh feature ticket end-to-end and the full lifecycle (PRD through docs) needs to run autonomously"
 argument-hint: "[ticket-id] [description-file]"
 allowed-tools: Read, Write, Glob, Grep, Skill, Task, AskUserQuestion
 model: sonnet

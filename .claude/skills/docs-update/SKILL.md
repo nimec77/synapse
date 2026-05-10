@@ -1,5 +1,6 @@
 ---
-description: "Update documentation based on ticket work"
+name: docs-update
+description: "Use when a ticket's implementation is complete and project documentation needs to reflect the changes"
 argument-hint: "[ticket-id]"
 allowed-tools: Read, Write, Glob, Grep
 model: sonnet

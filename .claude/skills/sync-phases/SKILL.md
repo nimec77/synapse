@@ -1,5 +1,6 @@
 ---
-description: "Sync phase completion status between tasklist.md and phase-*.md files"
+name: sync-phases
+description: "Use when phase completion checkboxes in tasklist.md and individual phase-*.md files have drifted out of sync"
 allowed-tools: Read, Write, Glob, Grep
 model: sonnet
 ---

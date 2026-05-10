@@ -1,5 +1,6 @@
 ---
-description: "Run implementation and code review cycle for an existing tasklist"
+name: dev-cycle
+description: "Use when a tasklist exists for a ticket and implementation plus code-review cycles need to run"
 argument-hint: "[ticket-id] [description-file]"
 allowed-tools: Read, Write, Glob, Grep, Skill, Task, AskUserQuestion
 model: sonnet

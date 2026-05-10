@@ -1,5 +1,6 @@
 ---
-description: "Gather technical context and create a research document for the ticket"
+name: research
+description: "Use when a ticket needs technical context gathered from the codebase and external sources before planning"
 argument-hint: "[ticket-id]"
 allowed-tools: Read, Write, Glob, Grep, AskUserQuestion, rust-analyzer-lsp
 model: opus

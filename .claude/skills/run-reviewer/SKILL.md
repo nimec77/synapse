@@ -1,5 +1,6 @@
 ---
-description: "Review changes for a ticket"
+name: run-reviewer
+description: "Use when changes for a ticket need code review against the plan and PRD before merging"
 argument-hint: "[ticket-id]"
 allowed-tools: Read, Write, Glob, Grep, rust-analyzer-lsp, AskUserQuestion
 model: opus

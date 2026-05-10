@@ -1,5 +1,6 @@
 ---
-description: "Continuous phase loop: sync status, implement next phase, commit, repeat"
+name: phase-loop
+description: "Use when a tasklist with multiple phases needs to be executed end-to-end without manual checkpoints"
 allowed-tools: Read, Write, Edit, Glob, Grep, Task, Bash, AskUserQuestion
 model: sonnet
 ---

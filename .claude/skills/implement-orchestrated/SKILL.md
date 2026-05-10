@@ -1,5 +1,6 @@
 ---
-description: "Implement a task with separate code and test phases, automated verification, and refinement"
+name: implement-orchestrated
+description: "Use when a task needs separated code and test phases with automated verification and refinement"
 argument-hint: "[ticket-id]"
 allowed-tools: Read, Write, Glob, Grep, Bash, Task, rust-analyzer-lsp, AskUserQuestion
 model: sonnet

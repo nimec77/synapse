@@ -1,5 +1,6 @@
 ---
-description: "Quickly implement tasks from a phase file with automated coding and review"
+name: quick-implement
+description: "Use when a phase file lists ready tasks that need automated coding plus review without the full orchestrated cycle"
 argument-hint: "[phase-file-path]"
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Task, AskUserQuestion
 model: sonnet

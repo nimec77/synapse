@@ -1,5 +1,6 @@
 ---
-description: "Create the architecture and implementation plan for the ticket"
+name: plan
+description: "Use when a PRD is approved and architecture or implementation decisions are needed before tasks are broken down"
 argument-hint: "[ticket-id]"
 allowed-tools: Read, Write, Glob, Grep, rust-analyzer-lsp, AskUserQuestion
 model: opus
