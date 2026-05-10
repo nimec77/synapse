@@ -16,6 +16,24 @@ pub(super) struct DisplayMessage {
     pub(super) role: Role,
     /// The text content of the message.
     pub(super) content: String,
+    /// Chain-of-thought reasoning from reasoning-capable models.
+    ///
+    /// Preserved so that session-resumed conversations can replay `reasoning_content`
+    /// in outbound API calls (DeepSeek tool-call history rule). Also used in Task 22.6
+    /// for dim/italic rendering in the REPL.
+    pub(super) reasoning_content: Option<String>,
+}
+
+impl DisplayMessage {
+    /// Create a display message without reasoning content.
+    #[allow(dead_code)] // convenience constructor, will be used in task 22.6
+    pub(super) fn simple(role: Role, content: impl Into<String>) -> Self {
+        Self {
+            role,
+            content: content.into(),
+            reasoning_content: None,
+        }
+    }
 }
 
 /// Application state for the REPL.
@@ -40,6 +58,10 @@ pub(super) struct ReplApp {
     pub(super) provider_name: String,
     /// Model name for display.
     pub(super) model_name: String,
+    /// Whether to render reasoning tokens above the answer in dim/italic style.
+    ///
+    /// Maps to `config.cli.show_reasoning`. Default: `true` (CLI is developer-facing).
+    pub(super) show_reasoning: bool,
 }
 
 impl ReplApp {
@@ -56,6 +78,7 @@ impl ReplApp {
             status_message: None,
             provider_name: provider_name.to_string(),
             model_name: model_name.to_string(),
+            show_reasoning: true, // default: show reasoning (CLI is developer-facing)
         }
     }
 
@@ -156,6 +179,7 @@ impl ReplApp {
         self.messages.push(DisplayMessage {
             role: Role::Assistant,
             content: text.to_string(),
+            reasoning_content: None,
         });
     }
 
@@ -170,7 +194,7 @@ impl ReplApp {
 
     /// Build conversation lines for rendering.
     pub(super) fn build_history_lines(&self) -> Vec<Line<'_>> {
-        build_history_lines(&self.messages, self.is_streaming)
+        build_history_lines(&self.messages, self.is_streaming, self.show_reasoning)
     }
 }
 
@@ -384,6 +408,7 @@ mod tests {
         app.messages.push(DisplayMessage {
             role: Role::User,
             content: "Hello".to_string(),
+            reasoning_content: None,
         });
 
         // Delta after user message creates new assistant message
@@ -403,12 +428,14 @@ mod tests {
         app.messages.push(DisplayMessage {
             role: Role::User,
             content: "Hello".to_string(),
+            reasoning_content: None,
         });
         assert_eq!(app.last_assistant_content(), None);
 
         app.messages.push(DisplayMessage {
             role: Role::Assistant,
             content: "Hi there".to_string(),
+            reasoning_content: None,
         });
         assert_eq!(app.last_assistant_content(), Some("Hi there"));
     }
@@ -429,10 +456,12 @@ mod tests {
         app.messages.push(DisplayMessage {
             role: Role::User,
             content: "Hello".to_string(),
+            reasoning_content: None,
         });
         app.messages.push(DisplayMessage {
             role: Role::Assistant,
             content: "Hi!".to_string(),
+            reasoning_content: None,
         });
 
         let lines = app.build_history_lines();
@@ -450,6 +479,7 @@ mod tests {
         app.messages.push(DisplayMessage {
             role: Role::Tool,
             content: "Tool output".to_string(),
+            reasoning_content: None,
         });
 
         let lines = app.build_history_lines();
@@ -494,16 +524,19 @@ mod tests {
         app.messages.push(DisplayMessage {
             role: Role::User,
             content: "Hello".to_string(),
+            reasoning_content: None,
         });
         app.messages.push(DisplayMessage {
             role: Role::Assistant,
             content: "Hi there!".to_string(),
+            reasoning_content: None,
         });
 
         // Simulate user submitting a new message in the REPL
         app.messages.push(DisplayMessage {
             role: Role::User,
             content: "Follow up question".to_string(),
+            reasoning_content: None,
         });
 
         // Build conv_messages the same way the fixed code does:
@@ -544,5 +577,67 @@ mod tests {
         app.delete_char_before_cursor();
         assert_eq!(app.input, "\u{00E9}b");
         assert_eq!(app.cursor_position, 0);
+    }
+
+    /// AC: When `show_reasoning = true` and a DisplayMessage has reasoning,
+    /// `build_history_lines` emits at least one line with `Modifier::DIM`.
+    #[test]
+    fn test_build_history_lines_reasoning_dim_when_flag_true() {
+        use ratatui::style::Modifier;
+
+        let id = Uuid::new_v4();
+        let mut app = ReplApp::new(id, "test", "test");
+        app.show_reasoning = true;
+
+        app.messages.push(DisplayMessage {
+            role: Role::Assistant,
+            content: "The answer is 42.".to_string(),
+            reasoning_content: Some("Let me think step by step...".to_string()),
+        });
+
+        let lines = app.build_history_lines();
+
+        // At least one line must have DIM modifier (reasoning line)
+        let has_dim_line = lines.iter().any(|line| {
+            line.spans
+                .iter()
+                .any(|span| span.style.add_modifier.contains(Modifier::DIM))
+        });
+        assert!(has_dim_line, "expected at least one dim line for reasoning");
+
+        // The reasoning text must appear somewhere in the lines
+        let all_text: String = lines
+            .iter()
+            .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
+            .collect();
+        assert!(
+            all_text.contains("Let me think step by step"),
+            "reasoning text must appear in lines"
+        );
+    }
+
+    /// AC: When `show_reasoning = false`, no reasoning text appears in the output.
+    #[test]
+    fn test_build_history_lines_reasoning_hidden_when_flag_false() {
+        let id = Uuid::new_v4();
+        let mut app = ReplApp::new(id, "test", "test");
+        app.show_reasoning = false;
+
+        app.messages.push(DisplayMessage {
+            role: Role::Assistant,
+            content: "The answer is 42.".to_string(),
+            reasoning_content: Some("REASONING_SHOULD_NOT_APPEAR".to_string()),
+        });
+
+        let lines = app.build_history_lines();
+
+        let all_text: String = lines
+            .iter()
+            .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
+            .collect();
+        assert!(
+            !all_text.contains("REASONING_SHOULD_NOT_APPEAR"),
+            "reasoning text must NOT appear when show_reasoning = false"
+        );
     }
 }

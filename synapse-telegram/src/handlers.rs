@@ -20,6 +20,12 @@ use crate::format::TELEGRAM_MSG_LIMIT;
 /// Error message sent to the user when agent or session operations fail.
 const ERROR_REPLY: &str = "Sorry, I encountered an error. Please try again.";
 
+/// Maximum number of Unicode chars of reasoning to include in a Telegram `<blockquote>` prefix.
+///
+/// Reasoning above this limit is truncated via [`synapse_core::text::truncate`] (which appends
+/// `"..."`). Kept short so the blockquote does not dominate the visible reply.
+pub const TELEGRAM_REASONING_PREVIEW_MAX_CHARS: usize = 1500;
+
 /// Per-chat session state: ordered list of session UUIDs and the active session index.
 ///
 /// Sessions are ordered by `updated_at DESC` (most recent first), matching the
@@ -134,7 +140,13 @@ pub async fn handle_message(
 
     let mut messages: Vec<CoreMessage> = stored_messages
         .into_iter()
-        .map(|m| CoreMessage::new(m.role, m.content))
+        .map(|m| {
+            let mut msg = CoreMessage::new(m.role, m.content);
+            if let Some(reasoning) = m.reasoning_content {
+                msg = msg.with_reasoning(reasoning);
+            }
+            msg
+        })
         .collect();
 
     let user_message = CoreMessage::new(Role::User, &text);
@@ -154,9 +166,14 @@ pub async fn handle_message(
     // Step 7: Call agent for a response.
     match agent.complete(&mut messages).await {
         Ok(response) => {
-            // Store the assistant response.
-            let stored_response =
+            // Store the assistant response — always persist reasoning_content
+            // (regardless of the show_reasoning display flag) so multi-turn
+            // tool conversations can replay it on subsequent API calls.
+            let mut stored_response =
                 StoredMessage::new(session_id, Role::Assistant, &response.content);
+            if let Some(ref reasoning) = response.reasoning_content {
+                stored_response = stored_response.with_reasoning(reasoning.clone());
+            }
             if let Err(e) = storage.add_message(&stored_response).await {
                 tracing::warn!(
                     "Failed to store assistant message for chat {}: {}",
@@ -165,9 +182,34 @@ pub async fn handle_message(
                 );
             }
 
-            // Convert Markdown to Telegram HTML, chunk, and send with fallback.
-            let html = crate::format::md_to_telegram_html(&response.content);
-            let chunks = crate::format::chunk_html(&html);
+            // Convert Markdown to Telegram HTML.
+            // When show_reasoning is enabled AND reasoning is present, prepend it as a
+            // <blockquote> above the answer. Reasoning is truncated to
+            // TELEGRAM_REASONING_PREVIEW_MAX_CHARS chars to avoid dominating the reply.
+            let show_reasoning = config.telegram.as_ref().is_some_and(|t| t.show_reasoning);
+
+            let body = if show_reasoning
+                && let Some(ref reasoning) = response.reasoning_content
+                && !reasoning.is_empty()
+            {
+                let preview =
+                    synapse_core::text::truncate(reasoning, TELEGRAM_REASONING_PREVIEW_MAX_CHARS);
+                let truncated_marker = if preview.chars().count() < reasoning.chars().count() {
+                    "[reasoning truncated]"
+                } else {
+                    ""
+                };
+                format!(
+                    "<blockquote>{}{}</blockquote>\n\n{}",
+                    crate::format::escape_html(&preview),
+                    truncated_marker,
+                    crate::format::md_to_telegram_html(&response.content),
+                )
+            } else {
+                crate::format::md_to_telegram_html(&response.content)
+            };
+
+            let chunks = crate::format::chunk_html(&body);
             let mut html_failed = false;
             for chunk in &chunks {
                 match bot
@@ -188,6 +230,7 @@ pub async fn handle_message(
                 }
             }
             if html_failed {
+                // Plain-text fallback: use just the answer content (drop blockquote HTML)
                 let plain_chunks = chunk_message(&response.content);
                 for plain_chunk in plain_chunks {
                     bot.send_message(msg.chat.id, plain_chunk).await?;
@@ -362,5 +405,115 @@ mod tests {
             // Panics on invalid UTF-8 boundary — this is the regression guard.
             let _ = chunk.chars().count();
         }
+    }
+
+    // =========================================================================
+    // SY-22: Reasoning render-path tests
+    // =========================================================================
+
+    /// Helper: build the outgoing body string the way handle_message does.
+    fn build_body(content: &str, reasoning: Option<&str>, show_reasoning: bool) -> String {
+        if show_reasoning
+            && let Some(r) = reasoning
+            && !r.is_empty()
+        {
+            let preview = synapse_core::text::truncate(r, TELEGRAM_REASONING_PREVIEW_MAX_CHARS);
+            let truncated_marker = if preview.chars().count() < r.chars().count() {
+                "[reasoning truncated]"
+            } else {
+                ""
+            };
+            format!(
+                "<blockquote>{}{}</blockquote>\n\n{}",
+                crate::format::escape_html(&preview),
+                truncated_marker,
+                crate::format::md_to_telegram_html(content),
+            )
+        } else {
+            crate::format::md_to_telegram_html(content)
+        }
+    }
+
+    /// AC: With `show_reasoning = false`, the body contains no `<blockquote>` and
+    /// no fixture reasoning text.
+    #[test]
+    fn test_telegram_reasoning_hidden_when_flag_false() {
+        let body = build_body(
+            "The answer is 42.",
+            Some("THIS_REASONING_MUST_NOT_APPEAR"),
+            false,
+        );
+        assert!(!body.contains("<blockquote>"));
+        assert!(!body.contains("THIS_REASONING_MUST_NOT_APPEAR"));
+        assert!(body.contains("42"));
+    }
+
+    /// AC: With `show_reasoning = true`, the body starts with `<blockquote>` and
+    /// contains the reasoning preview.
+    #[test]
+    fn test_telegram_reasoning_shown_when_flag_true() {
+        let body = build_body("The answer is 42.", Some("Let me think..."), true);
+        assert!(body.starts_with("<blockquote>"));
+        assert!(body.contains("Let me think..."));
+        assert!(body.contains("42"));
+    }
+
+    /// AC: When reasoning is None, no `<blockquote>` is emitted even with flag on.
+    #[test]
+    fn test_telegram_no_reasoning_no_blockquote() {
+        let body = build_body("Answer only.", None, true);
+        assert!(!body.contains("<blockquote>"));
+        assert!(body.contains("Answer only."));
+    }
+
+    /// AC: Reasoning is truncated to `TELEGRAM_REASONING_PREVIEW_MAX_CHARS` with a
+    /// `[reasoning truncated]` marker appended.
+    #[test]
+    fn test_telegram_reasoning_truncated_over_limit() {
+        let long_reasoning = "x".repeat(TELEGRAM_REASONING_PREVIEW_MAX_CHARS + 100);
+        let body = build_body("Answer.", Some(&long_reasoning), true);
+        assert!(body.contains("<blockquote>"));
+        assert!(body.contains("[reasoning truncated]"));
+        // The preview must be char-safe-truncated
+        assert!(body.chars().count() < long_reasoning.chars().count() + 1000);
+    }
+
+    /// AC: HTML in reasoning is escaped, not injected raw.
+    #[test]
+    fn test_telegram_reasoning_html_escaping() {
+        let body = build_body("Answer.", Some("<script>bad</script>"), true);
+        assert!(!body.contains("<script>"));
+        assert!(body.contains("&lt;script&gt;"));
+    }
+
+    /// Regression test for RF1: when `config.telegram` is `None` (e.g. bot token supplied via
+    /// `TELEGRAM_BOT_TOKEN` env var and `[telegram]` section absent), the production resolver
+    /// `config.telegram.as_ref().is_some_and(|t| t.show_reasoning)` must return `false` so that
+    /// reasoning is hidden by default (privacy-preserving, PRD Goal 7 / Decision 3).
+    #[test]
+    fn test_telegram_reasoning_hidden_when_telegram_section_absent() {
+        // Simulate the production resolver with telegram = None.
+        let telegram: Option<synapse_core::TelegramConfig> = None;
+        let show_reasoning = telegram.as_ref().is_some_and(|t| t.show_reasoning);
+        assert!(
+            !show_reasoning,
+            "show_reasoning must default to false when [telegram] section is absent"
+        );
+
+        // Confirm that with this resolved flag the body contains no blockquote.
+        let body = build_body(
+            "The answer is 42.",
+            Some("FIXTURE_REASONING"),
+            show_reasoning,
+        );
+        assert!(
+            !body.contains("<blockquote>"),
+            "body must not contain <blockquote> when show_reasoning resolves to false"
+        );
+        assert!(
+            !body.contains("FIXTURE_REASONING"),
+            "body must not expose reasoning text when show_reasoning resolves to false"
+        );
+        assert!(body.contains("42"), "body must still contain the answer");
     }
 }

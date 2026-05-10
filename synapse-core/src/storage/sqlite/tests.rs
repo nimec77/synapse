@@ -431,3 +431,50 @@ async fn test_sqlite_tool_calls_roundtrip() {
     assert_eq!(messages[1].tool_results.as_deref(), Some(tool_results_json));
     assert!(messages[1].tool_calls.is_none());
 }
+
+/// AC: `reasoning_content` round-trips through SQLite insert and read.
+#[tokio::test]
+async fn test_round_trip_message_with_reasoning_content() {
+    let store = create_test_store().await;
+    let session = Session::new("deepseek", "deepseek-v4-pro");
+    let session_id = session.id;
+    store.create_session(&session).await.expect("create failed");
+
+    // Insert a message with reasoning_content
+    let msg = StoredMessage::new(session_id, Role::Assistant, "The answer is 42.")
+        .with_reasoning("Let me reason through this step by step...");
+
+    store.add_message(&msg).await.expect("add_message failed");
+
+    // Retrieve and verify round-trip
+    let retrieved = store.get_messages(session_id).await.expect("get failed");
+    assert_eq!(retrieved.len(), 1);
+    assert_eq!(retrieved[0].role, Role::Assistant);
+    assert_eq!(retrieved[0].content, "The answer is 42.");
+    assert_eq!(
+        retrieved[0].reasoning_content.as_deref(),
+        Some("Let me reason through this step by step...")
+    );
+}
+
+/// AC: Pre-SY-22 rows (reasoning_content IS NULL) load correctly as `None`.
+#[tokio::test]
+async fn test_legacy_row_with_null_reasoning_content_loads_as_none() {
+    let store = create_test_store().await;
+    let session = Session::new("deepseek", "deepseek-chat");
+    let session_id = session.id;
+    store.create_session(&session).await.expect("create failed");
+
+    // Insert a message with NO reasoning_content (simulates pre-SY-22 row)
+    let msg = StoredMessage::new(session_id, Role::Assistant, "Old message, no reasoning.");
+    assert!(msg.reasoning_content.is_none());
+    store.add_message(&msg).await.expect("add_message failed");
+
+    // Retrieve: reasoning_content must be None (NOT empty string)
+    let retrieved = store.get_messages(session_id).await.expect("get failed");
+    assert_eq!(retrieved.len(), 1);
+    assert!(
+        retrieved[0].reasoning_content.is_none(),
+        "NULL reasoning_content must deserialize to None"
+    );
+}

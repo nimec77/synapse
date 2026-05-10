@@ -93,6 +93,12 @@ pub struct StoredMessage {
     pub tool_calls: Option<String>,
     /// JSON-serialized tool results (for tool result messages).
     pub tool_results: Option<String>,
+    /// Chain-of-thought reasoning produced by reasoning-capable models (e.g. DeepSeek V4 Pro).
+    ///
+    /// Persisted regardless of the `show_reasoning` display flag so that multi-turn
+    /// conversations with tool calls can replay the reasoning content on subsequent turns
+    /// (DeepSeek thinking-mode requirement). Pre-SY-22 rows store `NULL` which maps to `None`.
+    pub reasoning_content: Option<String>,
     /// When the message was created.
     pub timestamp: DateTime<Utc>,
 }
@@ -101,7 +107,7 @@ impl StoredMessage {
     /// Create a new stored message.
     ///
     /// Generates a UUID v7 (time-sortable) for the message ID.
-    /// Tool-related fields default to `None`.
+    /// Tool-related and reasoning fields default to `None`.
     pub fn new(session_id: Uuid, role: Role, content: impl Into<String>) -> Self {
         Self {
             id: Uuid::now_v7(),
@@ -110,6 +116,7 @@ impl StoredMessage {
             content: content.into(),
             tool_calls: None,
             tool_results: None,
+            reasoning_content: None,
             timestamp: Utc::now(),
         }
     }
@@ -123,6 +130,15 @@ impl StoredMessage {
     /// Set tool results JSON data on this message.
     pub fn with_tool_results(mut self, tool_results: impl Into<String>) -> Self {
         self.tool_results = Some(tool_results.into());
+        self
+    }
+
+    /// Attach reasoning content to this stored message.
+    ///
+    /// Persisted to SQLite so that a resumed session can replay `reasoning_content`
+    /// on subsequent API calls (DeepSeek tool-call history rule).
+    pub fn with_reasoning(mut self, reasoning: impl Into<String>) -> Self {
+        self.reasoning_content = Some(reasoning.into());
         self
     }
 }

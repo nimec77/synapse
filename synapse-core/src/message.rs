@@ -60,6 +60,18 @@ pub struct ToolCallData {
 }
 
 /// A single message in a conversation.
+///
+/// ## `reasoning_content` and the tool-call history rule
+///
+/// Reasoning-capable models (e.g. DeepSeek V4 Pro) populate
+/// `reasoning_content` on assistant messages that contain chain-of-thought.
+///
+/// **Critical:** When an assistant message has *both* `tool_calls.is_some()`
+/// and `reasoning_content.is_some()`, the `reasoning_content` **MUST** be
+/// replayed back to the API on every subsequent turn (DeepSeek thinking-mode
+/// requirement). The `openai_compat` provider handles this automatically in
+/// `build_api_messages`. On text-only turns (`tool_calls.is_none()`),
+/// `reasoning_content` is dropped from outbound history to save tokens.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Message {
     /// The role of this message.
@@ -70,6 +82,13 @@ pub struct Message {
     pub tool_calls: Option<Vec<ToolCallData>>,
     /// Tool call ID this message responds to (present when role == Tool).
     pub tool_call_id: Option<String>,
+    /// Chain-of-thought emitted by reasoning-capable models (e.g. DeepSeek V4 Pro).
+    ///
+    /// Set on Assistant messages produced by reasoning models. MUST be replayed
+    /// back to the API on every subsequent turn when the same assistant message
+    /// also has `tool_calls` (DeepSeek thinking-mode requirement). Dropped from
+    /// outbound history on text-only turns to save tokens.
+    pub reasoning_content: Option<String>,
 }
 
 impl Message {
@@ -97,7 +116,18 @@ impl Message {
             content: content.into(),
             tool_calls: None,
             tool_call_id: None,
+            reasoning_content: None,
         }
+    }
+
+    /// Attach reasoning content to this message.
+    ///
+    /// Used to set the chain-of-thought produced by reasoning-capable models.
+    /// When the message also has `tool_calls`, the reasoning content will be
+    /// replayed to the API on subsequent turns (see struct-level doc).
+    pub fn with_reasoning(mut self, reasoning: impl Into<String>) -> Self {
+        self.reasoning_content = Some(reasoning.into());
+        self
     }
 
     /// Create a tool result message.
@@ -126,6 +156,7 @@ impl Message {
             content: content.into(),
             tool_calls: None,
             tool_call_id: Some(tool_call_id.into()),
+            reasoning_content: None,
         }
     }
 }
@@ -266,5 +297,29 @@ mod tests {
         };
         let cloned = tool_call.clone();
         assert_eq!(tool_call, cloned);
+    }
+
+    #[test]
+    fn test_message_new_initializes_reasoning_none() {
+        let msg = Message::new(Role::User, "Hello");
+        assert!(msg.reasoning_content.is_none());
+    }
+
+    #[test]
+    fn test_message_tool_result_initializes_reasoning_none() {
+        let msg = Message::tool_result("call_1", "result");
+        assert!(msg.reasoning_content.is_none());
+    }
+
+    #[test]
+    fn test_message_with_reasoning() {
+        let msg =
+            Message::new(Role::Assistant, "Answer").with_reasoning("Let me think about this...");
+        assert_eq!(
+            msg.reasoning_content,
+            Some("Let me think about this...".to_string())
+        );
+        assert_eq!(msg.content, "Answer");
+        assert_eq!(msg.role, Role::Assistant);
     }
 }

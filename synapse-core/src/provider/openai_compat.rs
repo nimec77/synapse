@@ -23,10 +23,32 @@ use crate::mcp::ToolDefinition;
 use crate::message::{Message, Role, ToolCallData};
 
 // ---------------------------------------------------------------------------
+// Reasoning settings
+// ---------------------------------------------------------------------------
+
+/// Configures thinking mode for reasoning-capable models (e.g. DeepSeek V4 Pro).
+///
+/// When present on an [`OpenAiCompatProvider`], every request body will include
+/// `thinking: { "type": "enabled" }` and `reasoning_effort: <effort>`. The
+/// `OpenAiProvider` never sets this field — it is only configured by
+/// `DeepSeekProvider::new` when the model is recognised as reasoning-capable.
+#[derive(Debug, Clone)]
+pub(super) struct ReasoningSettings {
+    /// Effort level: `"low"`, `"medium"`, `"high"`, or `"max"`.
+    pub(super) effort: String,
+}
+
+// ---------------------------------------------------------------------------
 // Shared helper functions
 // ---------------------------------------------------------------------------
 
 /// Convert a slice of [`Message`]s to the OpenAI-compatible wire format.
+///
+/// Tool-call history rule for reasoning models: when an assistant message has
+/// **both** `tool_calls.is_some()` AND `reasoning_content.is_some()`, the
+/// `reasoning_content` is included on the outbound `ApiMessage`. On text-only
+/// turns (`tool_calls.is_none()`), `reasoning_content` is dropped to save
+/// tokens (DeepSeek-spec exact policy).
 pub(super) fn build_api_messages(messages: &[Message]) -> Vec<ApiMessage> {
     messages
         .iter()
@@ -50,11 +72,23 @@ pub(super) fn build_api_messages(messages: &[Message]) -> Vec<ApiMessage> {
                         .collect()
                 });
 
+            // Include reasoning_content on assistant messages with tool calls only
+            // (DeepSeek tool-call history rule).
+            let reasoning_content = if m.role == Role::Assistant
+                && m.tool_calls.is_some()
+                && m.reasoning_content.is_some()
+            {
+                m.reasoning_content.clone()
+            } else {
+                None
+            };
+
             ApiMessage {
                 role,
                 content: Some(m.content.clone()),
                 tool_calls,
                 tool_call_id: m.tool_call_id.clone(),
+                reasoning_content,
             }
         })
         .collect()
@@ -121,6 +155,13 @@ pub(super) async fn complete_request(
     let content = choice.message.content.clone().unwrap_or_default();
     let mut msg = Message::new(Role::Assistant, content);
 
+    // Populate reasoning_content from the response if present.
+    if let Some(ref reasoning) = choice.message.reasoning_content
+        && !reasoning.is_empty()
+    {
+        msg = msg.with_reasoning(reasoning.clone());
+    }
+
     if let Some(ref tool_calls) = choice.message.tool_calls {
         let parsed: Vec<ToolCallData> = tool_calls
             .iter()
@@ -169,8 +210,9 @@ pub(super) fn to_oai_tools(tools: &[ToolDefinition]) -> Option<Vec<OaiTool>> {
 /// Stream SSE tokens from an OpenAI-compatible endpoint.
 ///
 /// Returns a pinned, owned stream so callers do not need to hold a reference
-/// to the provider. Yields [`StreamEvent::TextDelta`] for each non-empty token
-/// and [`StreamEvent::Done`] when the stream ends.
+/// to the provider. Yields [`StreamEvent::ReasoningDelta`] for reasoning tokens,
+/// [`StreamEvent::TextDelta`] for answer tokens, and [`StreamEvent::Done`] when
+/// the stream ends.
 pub(super) fn stream_sse(
     client: reqwest::Client,
     endpoint: String,
@@ -178,9 +220,19 @@ pub(super) fn stream_sse(
     model: String,
     messages: Vec<Message>,
     max_tokens: u32,
+    reasoning: Option<ReasoningSettings>,
 ) -> Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send>> {
     Box::pin(async_stream::stream! {
         let api_messages = build_api_messages(&messages);
+
+        let (thinking, reasoning_effort) = if let Some(ref r) = reasoning {
+            (
+                Some(ThinkingConfig { kind: "enabled".to_string() }),
+                Some(r.effort.clone()),
+            )
+        } else {
+            (None, None)
+        };
 
         let request = StreamingApiRequest {
             model,
@@ -188,6 +240,8 @@ pub(super) fn stream_sse(
             max_tokens,
             stream: true,
             tools: None,
+            thinking,
+            reasoning_effort,
         };
 
         let response = client
@@ -233,11 +287,21 @@ pub(super) fn stream_sse(
 
                     match serde_json::from_str::<StreamChunk>(&event.data) {
                         Ok(chunk) => {
-                            if let Some(choice) = chunk.choices.first()
-                                && let Some(content) = &choice.delta.content
-                                && !content.is_empty()
-                            {
-                                yield Ok(StreamEvent::TextDelta(content.clone()));
+                            if let Some(choice) = chunk.choices.first() {
+                                // Yield reasoning delta first if present
+                                if let Some(ref reasoning_token) = choice.delta.reasoning_content
+                                    && !reasoning_token.is_empty()
+                                {
+                                    yield Ok(StreamEvent::ReasoningDelta(
+                                        reasoning_token.clone(),
+                                    ));
+                                }
+                                // Then yield text delta if present
+                                if let Some(ref content) = choice.delta.content
+                                    && !content.is_empty()
+                                {
+                                    yield Ok(StreamEvent::TextDelta(content.clone()));
+                                }
                             }
                         }
                         Err(e) => {
@@ -275,6 +339,10 @@ pub(super) struct OpenAiCompatProvider {
     pub(super) api_key: String,
     pub(super) model: String,
     pub(super) max_tokens: u32,
+    /// When `Some`, thinking mode is enabled: every request body includes
+    /// `thinking: { "type": "enabled" }` and `reasoning_effort: <effort>`.
+    /// `None` (the default) preserves the pre-SY-22 wire format exactly.
+    pub(super) reasoning: Option<ReasoningSettings>,
 }
 
 impl OpenAiCompatProvider {
@@ -291,6 +359,32 @@ impl OpenAiCompatProvider {
             api_key: api_key.into(),
             model: model.into(),
             max_tokens,
+            reasoning: None,
+        }
+    }
+
+    /// Enable thinking mode for this provider.
+    ///
+    /// Only call this when the model is known to be reasoning-capable (e.g.
+    /// `deepseek-v4-pro`). When set, every outbound request includes
+    /// `thinking: { "type": "enabled" }` and `reasoning_effort: <effort>`.
+    #[allow(dead_code)] // used by DeepSeekProvider::new in task 22.3
+    pub(super) fn with_reasoning(mut self, settings: ReasoningSettings) -> Self {
+        self.reasoning = Some(settings);
+        self
+    }
+
+    /// Build the `thinking` and `reasoning_effort` fields from our settings.
+    fn reasoning_fields(&self) -> (Option<ThinkingConfig>, Option<String>) {
+        if let Some(ref r) = self.reasoning {
+            (
+                Some(ThinkingConfig {
+                    kind: "enabled".to_string(),
+                }),
+                Some(r.effort.clone()),
+            )
+        } else {
+            (None, None)
         }
     }
 }
@@ -299,12 +393,15 @@ impl OpenAiCompatProvider {
 impl LlmProvider for OpenAiCompatProvider {
     async fn complete(&self, messages: &[Message]) -> Result<Message, ProviderError> {
         let api_messages = build_api_messages(messages);
+        let (thinking, reasoning_effort) = self.reasoning_fields();
         let request = ApiRequest {
             model: self.model.clone(),
             messages: api_messages,
             max_tokens: self.max_tokens,
             tools: None,
             tool_choice: None,
+            thinking,
+            reasoning_effort,
         };
         complete_request(&self.client, &self.base_url, &self.api_key, &request).await
     }
@@ -315,6 +412,7 @@ impl LlmProvider for OpenAiCompatProvider {
         tools: &[ToolDefinition],
     ) -> Result<Message, ProviderError> {
         let api_messages = build_api_messages(messages);
+        let (thinking, reasoning_effort) = self.reasoning_fields();
         let request = ApiRequest {
             model: self.model.clone(),
             messages: api_messages,
@@ -325,6 +423,8 @@ impl LlmProvider for OpenAiCompatProvider {
             } else {
                 Some("auto".to_string())
             },
+            thinking,
+            reasoning_effort,
         };
         complete_request(&self.client, &self.base_url, &self.api_key, &request).await
     }
@@ -340,6 +440,7 @@ impl LlmProvider for OpenAiCompatProvider {
             self.model.clone(),
             messages.to_vec(),
             self.max_tokens,
+            self.reasoning.clone(),
         )
     }
 }

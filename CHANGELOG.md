@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Add DeepSeek V4 Pro reasoning model support with chain-of-thought streaming, SQLite persistence, dim REPL rendering, and configurable Telegram `<blockquote>` display (SY-22)
+
 ## [0.21.3] - 2026-03-22
 
 ### Security

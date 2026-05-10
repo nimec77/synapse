@@ -96,8 +96,15 @@ pub struct Message {
     pub tool_calls: Option<Vec<ToolCallData>>,
     /// Tool call ID this message responds to (Some when role == Tool).
     pub tool_call_id: Option<String>,
+    /// Chain-of-thought reasoning from reasoning-capable models (e.g. DeepSeek V4 Pro).
+    /// Set on Assistant messages. MUST be replayed on subsequent turns when the same
+    /// message also has tool_calls (DeepSeek tool-call history rule). Dropped from
+    /// outbound history on text-only turns to save tokens.
+    pub reasoning_content: Option<String>,
 }
 ```
+
+**Tool-call history rule for `reasoning_content`:** When an assistant message has *both* `tool_calls.is_some()` and `reasoning_content.is_some()`, the `reasoning_content` **MUST** be included in the outbound `ApiMessage` on every subsequent API call (DeepSeek thinking-mode requirement). `build_api_messages` in `openai_compat.rs` handles this automatically. On text-only turns (`tool_calls.is_none()`), reasoning is dropped to save tokens. Violating this rule causes mid-conversation 400 errors from the DeepSeek API.
 
 **SessionStore** (`synapse-core/src/storage.rs`) — persistence port:
 ```rust
@@ -116,11 +123,14 @@ pub trait SessionStore: Send + Sync {
 
 ### Streaming
 
-Providers return `Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send>>`. The `StreamEvent` enum (`provider/streaming.rs`) has exactly two variants:
-- `TextDelta(String)` — token fragment
+Providers return `Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send>>`. The `StreamEvent` enum (`provider/streaming.rs`) is `#[non_exhaustive]` and has three variants:
+- `TextDelta(String)` — incremental fragment of the user-visible answer
+- `ReasoningDelta(String)` — incremental fragment of chain-of-thought reasoning (DeepSeek V4 Pro and other reasoning models); renderers display this above/distinct from `TextDelta`
 - `Done` — stream complete
 
-`Agent::stream()` and `Agent::stream_owned()` yield `Result<StreamEvent, AgentError>` (not `ProviderError`). When tools are available, they resolve tool call iterations internally via `complete()` and stream only the final text response. When no tools are configured, they delegate directly to the provider's `stream()`. CLI consumes streams with `tokio::select!` for Ctrl+C handling. Uses `async_stream::stream!` macro and `eventsource-stream` for SSE parsing. OpenAI-compatible providers (Anthropic, DeepSeek, OpenAI) set `tool_choice: "auto"` in the API request when tools are present.
+`#[non_exhaustive]` was added so future variants (Anthropic/OpenAI reasoning) do not break downstream `match` arms. All `match StreamEvent` sites outside `synapse-core` must include a wildcard arm.
+
+`Agent::stream()` and `Agent::stream_owned()` yield `Result<StreamEvent, AgentError>` (not `ProviderError`). When tools are available, they resolve tool call iterations internally via `complete()`, then yield: `ReasoningDelta(s)` (if reasoning present) → `TextDelta(content)` → `Done`. When no tools are configured, they delegate directly to the provider's `stream()`. CLI consumes streams with `tokio::select!` for Ctrl+C handling. Uses `async_stream::stream!` macro and `eventsource-stream` for SSE parsing. OpenAI-compatible providers (Anthropic, DeepSeek, OpenAI) set `tool_choice: "auto"` in the API request when tools are present.
 
 ### Telegram Bot Architecture
 
@@ -155,11 +165,26 @@ LLM responses are Markdown; Telegram requires HTML or MarkdownV2. HTML is used b
 
 In `handlers.rs`, the send loop attempts `ParseMode::Html` first; if Telegram rejects the HTML (e.g. malformed), it falls back to plain-text chunks via `chunk_message()`. `ERROR_REPLY` is always sent as plain text (no parse mode).
 
+**Reasoning rendering**: streaming accumulates `ReasoningDelta` events into a separate buffer (never sent inline). On stream completion, if `telegram.show_reasoning == true`, the reasoning is truncated to `TELEGRAM_REASONING_PREVIEW_MAX_CHARS = 1500` chars via `synapse_core::text::truncate` (with a `…[reasoning truncated]` suffix) and prepended as `<blockquote>{escaped_reasoning}</blockquote>\n\n` before the first answer chunk. Reasoning is always persisted to SQLite regardless of the flag (required for DeepSeek tool-call history rule).
+
 ### Provider Factory
 
 `create_provider(config) -> Box<dyn LlmProvider>` in `provider/factory.rs`. API key resolution: **env var > config file** (e.g., `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`). Provider selection by `config.provider` string: `"deepseek"`, `"anthropic"`, `"openai"`. `MockProvider` is test-only and not available through `create_provider()`.
 
 **Adding a new OpenAI-compatible provider:** use `provider/openai_compat.rs` as the shared base (serde types, `build_api_messages`, `complete_request`, `stream_sse`, `SSE_DONE_MARKER`). See `deepseek.rs` and `openai.rs` for thin-wrapper examples (~70 lines each).
+
+#### Reasoning Models
+
+`REASONING_MODELS` (`deepseek.rs`) lists DeepSeek model identifiers that support thinking mode (currently `["deepseek-v4-pro"]`). When `config.model` is in this list and `config.provider == "deepseek"`, the factory configures `OpenAiCompatProvider` with `ReasoningSettings` — every request body then includes `thinking: {"type": "enabled"}` and `reasoning_effort: <effort>`. Non-reasoning models and non-DeepSeek providers are never sent these fields.
+
+**Effort resolution** (`resolve_reasoning_effort` in `factory.rs`):
+1. `config.reasoning_effort = Some(v)` → use `v` (explicit always wins)
+2. `config.mcp.is_some()` AND no explicit → `"max"` (auto-escalated for complex tool flows)
+3. Otherwise → `"high"` (safe default per DeepSeek docs)
+
+The factory emits `tracing::info!(model, effort, auto_escalated, "factory: enabling DeepSeek thinking mode")` when reasoning is activated, and `tracing::warn!` when `reasoning_effort` is set for a non-DeepSeek provider (forward-compat warning, not an error).
+
+Reference: `docs/research/SY-22-deepseek-v4-pro.md`.
 
 ### Config Loading
 
@@ -169,11 +194,13 @@ Priority (highest first):
 3. `~/.config/synapse/config.toml` (user default)
 4. Error — no silent defaults; exits with a clear message
 
-`Config` top-level fields: `provider`, `api_key`, `model`, `max_tokens: u32` (serde default `4096` via `default_max_tokens()`; passed to every provider call), `system_prompt: Option<String>` (injected on-the-fly, never stored in DB), `system_prompt_file: Option<String>` (path to external prompt file; inline `system_prompt` wins if both set), `session`, `mcp`, `telegram`, `logging: Option<LoggingConfig>`. `TelegramConfig` lives in `synapse-core/src/config.rs` and includes `max_sessions_per_chat: u32` (serde default `10`; manual `impl Default` — not derived — so `TelegramConfig::default()` returns `10` not `0`). Bot token resolution: `TELEGRAM_BOT_TOKEN` env var > `telegram.token` in config. Empty `allowed_users` rejects all users (secure by default). `LoggingConfig` fields: `directory` (default `"logs"`), `max_files` (default `7`), `rotation` (`"daily"` / `"hourly"` / `"never"`, default `"daily"`); omitting `[logging]` keeps stdout-only behavior.
+`Config` top-level fields: `provider`, `api_key`, `model`, `max_tokens: u32` (serde default `4096` via `default_max_tokens()`; passed to every provider call), `system_prompt: Option<String>` (injected on-the-fly, never stored in DB), `system_prompt_file: Option<String>` (path to external prompt file; inline `system_prompt` wins if both set), `session`, `mcp`, `telegram`, `logging: Option<LoggingConfig>`, `reasoning_effort: Option<String>` (accepted values per DeepSeek: `"low"`, `"medium"`, `"high"`, `"max"`; only applied when provider is DeepSeek and model is in `REASONING_MODELS`; defaults to `"high"` internally), `cli: Option<CliConfig>` (CLI display preferences). `TelegramConfig` lives in `synapse-core/src/config.rs` and includes `max_sessions_per_chat: u32` (serde default `10`; manual `impl Default` — not derived — so `TelegramConfig::default()` returns `10` not `0`) and `show_reasoning: bool` (serde default `false` — privacy-preserving; set `true` to emit `<blockquote>reasoning</blockquote>` above the answer). `CliConfig` has `show_reasoning: bool` (serde default `true`; CLI is developer-facing). Bot token resolution: `TELEGRAM_BOT_TOKEN` env var > `telegram.token` in config. Empty `allowed_users` rejects all users (secure by default). `LoggingConfig` fields: `directory` (default `"logs"`), `max_files` (default `7`), `rotation` (`"daily"` / `"hourly"` / `"never"`, default `"daily"`); omitting `[logging]` keeps stdout-only behavior.
 
 ### Storage
 
 SQLite via `sqlx` with WAL mode, connection pooling (max 5), automatic migrations. Database URL priority: `$DATABASE_URL` > `session.database_url` in config > default `sqlite:~/.config/synapse/sessions.db`. Uses UUID v7 (time-sortable) and RFC3339 timestamps. `create_storage(config) -> Box<dyn SessionStore>` factory in `storage/sqlite.rs`.
+
+Migrations live in `synapse-core/migrations/` with timestamp-prefixed filenames (e.g. `20260208_002_add_tool_columns.sql`). Each adds nullable columns — never removes or renames. `StoredMessage` (`session.rs`) includes `reasoning_content: Option<String>` (added in `20260510_004_add_reasoning_content.sql`) which round-trips with `Message.reasoning_content`.
 
 ### Error Types
 
@@ -306,3 +333,4 @@ Ticket artifacts live in: `docs/prd/`, `docs/research/`, `docs/plan/`, `docs/tas
 | SY-19 | Telegram Command Fixes & Interactive Keyboards | Fix `/switch`/`/delete` fall-through (`String` instead of `usize`); `parse_session_arg`; `/start` command; defensive guard in `handle_message`; inline keyboards with `InlineKeyboardMarkup`; `handle_callback` with `do_switch`/`do_delete` shared logic; dispatcher extended to handle `CallbackQuery` |
 | SY-20 | Improve /history Command | `/history` now shows last 10 user/assistant messages only (filtered from full history), truncated to 150 chars with `...`; `truncate_content` and `format_history` extracted as pure helpers for testability |
 | SY-21 | Code Refactoring II | Unified `text::truncate` in core; `OpenAiCompatProvider` struct in `openai_compat.rs` (DeepSeek/OpenAI are thin wrappers); extracted submodules: `openai_compat/types.rs`, `openai_compat/tests.rs`, `anthropic/types.rs`, `config/tests.rs`, `storage/sqlite/tests.rs`, `commands/keyboard.rs`, `commands/tests.rs`, `format/chunk.rs`, `startup.rs`, `startup/tests.rs` |
+| SY-22 | DeepSeek V4 Pro Reasoning Model | `Message.reasoning_content`, `StreamEvent::ReasoningDelta` + `#[non_exhaustive]`, wire-format extensions in `openai_compat` (`ThinkingConfig`, `ReasoningSettings`, `thinking`/`reasoning_effort` request fields), reasoning-aware DeepSeek factory with effort auto-escalation, agent loop preservation of reasoning on tool-call turns, SQLite migration + storage round-trip, REPL dim/italic rendering + one-shot stderr routing, Telegram `<blockquote>` rendering with `show_reasoning` flag |

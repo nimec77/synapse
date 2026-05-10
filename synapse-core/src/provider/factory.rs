@@ -8,6 +8,8 @@ use crate::provider::{
     AnthropicProvider, DeepSeekProvider, LlmProvider, OpenAiProvider, ProviderError,
 };
 
+use super::deepseek::is_reasoning_model;
+
 /// Environment variable name for the DeepSeek API key.
 const DEEPSEEK_API_KEY_ENV: &str = "DEEPSEEK_API_KEY";
 /// Environment variable name for the Anthropic API key.
@@ -50,16 +52,38 @@ pub fn create_provider(config: &Config) -> Result<Box<dyn LlmProvider>, Provider
         unknown => return Err(ProviderError::UnknownProvider(unknown.to_string())),
     }
 
+    // Warn when reasoning_effort is set for a non-DeepSeek provider (forward-compat).
+    if config.reasoning_effort.is_some() && config.provider != "deepseek" {
+        tracing::warn!(
+            provider = %config.provider,
+            "config.reasoning_effort is set but provider does not support reasoning mode; ignoring",
+        );
+    }
+
     let api_key = get_api_key(config)?;
 
     tracing::info!(provider = %config.provider, model = %config.model, "factory: creating provider");
 
     match config.provider.as_str() {
-        "deepseek" => Ok(Box::new(DeepSeekProvider::new(
-            api_key,
-            &config.model,
-            config.max_tokens,
-        ))),
+        "deepseek" => {
+            let (effort, auto_escalated) = resolve_reasoning_effort(config);
+
+            if is_reasoning_model(&config.model) {
+                tracing::info!(
+                    model = %config.model,
+                    effort = %effort,
+                    auto_escalated,
+                    "factory: enabling DeepSeek thinking mode",
+                );
+            }
+
+            Ok(Box::new(DeepSeekProvider::new(
+                api_key,
+                &config.model,
+                config.max_tokens,
+                Some(effort),
+            )))
+        }
         "anthropic" => Ok(Box::new(AnthropicProvider::new(
             api_key,
             &config.model,
@@ -71,6 +95,22 @@ pub fn create_provider(config: &Config) -> Result<Box<dyn LlmProvider>, Provider
             config.max_tokens,
         ))),
         _ => unreachable!("Provider validated above"),
+    }
+}
+
+/// Resolve the effective reasoning effort string and whether it was auto-escalated.
+///
+/// Priority:
+/// 1. Explicit `config.reasoning_effort` — always wins; no escalation.
+/// 2. MCP configured (`config.mcp.is_some()`) AND no explicit effort → `"max"` (auto-escalated).
+/// 3. Otherwise → `"high"` (the safe default per DeepSeek docs).
+fn resolve_reasoning_effort(config: &Config) -> (String, bool) {
+    if let Some(ref explicit) = config.reasoning_effort {
+        (explicit.clone(), false)
+    } else if config.mcp.is_some() {
+        ("max".to_string(), true)
+    } else {
+        ("high".to_string(), false)
     }
 }
 
@@ -126,6 +166,32 @@ mod tests {
             mcp: None,
             telegram: None,
             logging: None,
+            reasoning_effort: None,
+            cli: None,
+        }
+    }
+
+    fn make_deepseek_config(model: &str, effort: Option<&str>, with_mcp: bool) -> Config {
+        use crate::config::McpSettings;
+        Config {
+            provider: "deepseek".to_string(),
+            model: model.to_string(),
+            api_key: Some("test-key".to_string()),
+            max_tokens: 4096,
+            system_prompt: None,
+            system_prompt_file: None,
+            session: None,
+            mcp: if with_mcp {
+                Some(McpSettings {
+                    config_path: Some("/fake/mcp.json".to_string()),
+                })
+            } else {
+                None
+            },
+            telegram: None,
+            logging: None,
+            reasoning_effort: effort.map(|s| s.to_string()),
+            cli: None,
         }
     }
 
@@ -254,5 +320,51 @@ mod tests {
         assert!(
             matches!(result, Err(ProviderError::MissingApiKey(msg)) if msg.contains("OPENAI_API_KEY"))
         );
+    }
+
+    // =========================================================================
+    // SY-22: Reasoning effort resolution tests
+    // =========================================================================
+
+    /// AC: `resolve_reasoning_effort` with explicit `reasoning_effort = "low"` returns
+    /// `("low", false)` regardless of MCP.
+    #[test]
+    fn test_factory_explicit_effort_overrides_mcp_escalation() {
+        let config = make_deepseek_config("deepseek-v4-pro", Some("low"), true);
+        let (effort, auto_escalated) = resolve_reasoning_effort(&config);
+        assert_eq!(effort, "low");
+        assert!(!auto_escalated, "explicit always wins, no auto-escalation");
+    }
+
+    /// AC: `resolve_reasoning_effort` with no explicit effort AND MCP configured returns
+    /// `("max", true)`.
+    #[test]
+    fn test_factory_auto_escalates_to_max_with_mcp() {
+        let config = make_deepseek_config("deepseek-v4-pro", None, true);
+        let (effort, auto_escalated) = resolve_reasoning_effort(&config);
+        assert_eq!(effort, "max");
+        assert!(auto_escalated);
+    }
+
+    /// AC: `resolve_reasoning_effort` with no explicit effort AND no MCP returns
+    /// `("high", false)`.
+    #[test]
+    fn test_factory_no_mcp_no_explicit_uses_high() {
+        let config = make_deepseek_config("deepseek-v4-pro", None, false);
+        let (effort, auto_escalated) = resolve_reasoning_effort(&config);
+        assert_eq!(effort, "high");
+        assert!(!auto_escalated);
+    }
+
+    /// AC: `create_provider` passes explicit reasoning effort to DeepSeek for a
+    /// reasoning model.
+    #[test]
+    fn test_factory_passes_reasoning_effort() {
+        let config = make_deepseek_config("deepseek-v4-pro", Some("low"), false);
+        // DeepSeekProvider is Box<dyn LlmProvider> so we can't introspect it here.
+        // The unit tests in deepseek.rs cover the inner provider's reasoning field.
+        // Here we just assert create_provider succeeds (api_key is in config).
+        let result = create_provider(&config);
+        assert!(result.is_ok());
     }
 }

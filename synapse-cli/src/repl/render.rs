@@ -123,7 +123,13 @@ pub(super) fn render_status_bar(frame: &mut Frame, app: &ReplApp, area: Rect) {
 pub(super) fn build_history_lines<'a>(
     messages: &'a [DisplayMessage],
     is_streaming: bool,
+    show_reasoning: bool,
 ) -> Vec<Line<'a>> {
+    /// Prefix for reasoning lines in the REPL (DIM + ITALIC, above the answer).
+    const REASONING_PREFIX: &str = "▎reasoning: ";
+
+    let dim_italic = Style::default().add_modifier(Modifier::DIM | Modifier::ITALIC);
+
     let mut lines: Vec<Line<'a>> = Vec::new();
     for msg in messages {
         let (label, label_color) = match msg.role {
@@ -140,6 +146,19 @@ pub(super) fn build_history_lines<'a>(
                 .fg(label_color)
                 .add_modifier(Modifier::BOLD),
         )));
+
+        // Reasoning lines (only for assistant messages when flag is on)
+        if show_reasoning
+            && msg.role == Role::Assistant
+            && let Some(ref reasoning) = msg.reasoning_content
+        {
+            for reasoning_line in reasoning.lines() {
+                lines.push(Line::from(Span::styled(
+                    format!("  {}{}", REASONING_PREFIX, reasoning_line),
+                    dim_italic,
+                )));
+            }
+        }
 
         // Content lines
         for content_line in msg.content.lines() {
