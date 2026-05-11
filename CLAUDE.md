@@ -8,16 +8,8 @@ Synapse is a Rust-based AI agent that serves as a unified interface to interact 
 
 ## Build Commands
 
-```bash
-cargo build                    # Build workspace
-cargo build --release          # Release build
-cargo test                     # Run all tests
-cargo test test_name           # Run specific test
-cargo test -p synapse-core     # Run tests for one crate
-cargo check                    # Type-check without building
-cargo fmt                      # Format code
-cargo clippy -- -D warnings    # Lint (CI runs with -D warnings)
-```
+Standard `cargo` applies. Per-crate scoping: `cargo test -p synapse-core` / `cargo test -p synapse-cli`
+/ `cargo test -p synapse-telegram`.
 
 **Pre-commit (required before every commit):**
 ```bash
@@ -47,7 +39,8 @@ DeepSeek
 OpenAI
 ```
 
-**Critical rule:** `synapse-core` never imports from interface crates. Dependencies flow inward only.
+> ⚠️ **Critical invariant** — `synapse-core` never imports from interface crates. Dependencies flow
+> inward only. Any code that needs to live in both CLI and Telegram belongs in `synapse-core`.
 
 ### Agent Orchestrator
 
@@ -72,54 +65,20 @@ agent.shutdown().await;                 // graceful MCP connection teardown
 
 ### Core Traits
 
-**LlmProvider** (`synapse-core/src/provider.rs`) — the central abstraction:
-```rust
-#[async_trait]
-pub trait LlmProvider: Send + Sync {
-    async fn complete(&self, messages: &[Message]) -> Result<Message, ProviderError>;
-    fn stream(&self, messages: &[Message])
-        -> Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send + '_>>;
+- **`LlmProvider`** (`synapse-core/src/provider.rs`) — `complete`, `stream`, `complete_with_tools`.
+  Default `complete_with_tools` delegates to `complete()` and ignores tools; Anthropic, DeepSeek,
+  and OpenAI override it to pass tools via the API. Read the source for the full signature.
+- **`SessionStore`** (`synapse-core/src/storage.rs`) — async CRUD over `Session`/`StoredMessage`
+  plus `cleanup(&SessionConfig)`. Implemented by `SqliteStore`.
+- **`Message`** (`synapse-core/src/message.rs`) — `role`, `content`, `tool_calls`,
+  `tool_call_id`, `reasoning_content`. Tool-call history rule below applies.
 
-    // Default: delegates to complete(), ignoring tools.
-    // Anthropic, DeepSeek, and OpenAI override this to pass tools via the API.
-    async fn complete_with_tools(&self, messages: &[Message], tools: &[ToolDefinition])
-        -> Result<Message, ProviderError>;
-}
-```
-
-**Message** (`synapse-core/src/message.rs`) — conversation message:
-```rust
-pub struct Message {
-    pub role: Role,
-    pub content: String,
-    /// Tool calls requested by the assistant (Some when role == Assistant and model invoked tools).
-    pub tool_calls: Option<Vec<ToolCallData>>,
-    /// Tool call ID this message responds to (Some when role == Tool).
-    pub tool_call_id: Option<String>,
-    /// Chain-of-thought reasoning from reasoning-capable models (e.g. DeepSeek V4 Pro).
-    /// Set on Assistant messages. MUST be replayed on subsequent turns when the same
-    /// message also has tool_calls (DeepSeek tool-call history rule). Dropped from
-    /// outbound history on text-only turns to save tokens.
-    pub reasoning_content: Option<String>,
-}
-```
-
-**Tool-call history rule for `reasoning_content`:** When an assistant message has *both* `tool_calls.is_some()` and `reasoning_content.is_some()`, the `reasoning_content` **MUST** be included in the outbound `ApiMessage` on every subsequent API call (DeepSeek thinking-mode requirement). `build_api_messages` in `openai_compat.rs` handles this automatically. On text-only turns (`tool_calls.is_none()`), reasoning is dropped to save tokens. Violating this rule causes mid-conversation 400 errors from the DeepSeek API.
-
-**SessionStore** (`synapse-core/src/storage.rs`) — persistence port:
-```rust
-#[async_trait]
-pub trait SessionStore: Send + Sync {
-    async fn create_session(&self, session: &Session) -> Result<(), StorageError>;
-    async fn get_session(&self, id: Uuid) -> Result<Option<Session>, StorageError>;
-    async fn list_sessions(&self) -> Result<Vec<SessionSummary>, StorageError>;
-    async fn touch_session(&self, id: Uuid) -> Result<(), StorageError>;
-    async fn delete_session(&self, id: Uuid) -> Result<bool, StorageError>;
-    async fn add_message(&self, message: &StoredMessage) -> Result<(), StorageError>;
-    async fn get_messages(&self, session_id: Uuid) -> Result<Vec<StoredMessage>, StorageError>;
-    async fn cleanup(&self, config: &SessionConfig) -> Result<CleanupResult, StorageError>;
-}
-```
+> ⚠️ **`reasoning_content` tool-call history rule** — When an assistant message has *both*
+> `tool_calls.is_some()` and `reasoning_content.is_some()`, `reasoning_content` **MUST** be
+> included in the outbound `ApiMessage` on every subsequent API call (DeepSeek thinking-mode
+> requirement). `build_api_messages` in `openai_compat.rs` handles this automatically. On
+> text-only turns (`tool_calls.is_none()`), reasoning is dropped to save tokens. Violating this
+> rule causes mid-conversation 400 errors.
 
 ### Streaming
 
@@ -132,40 +91,41 @@ Providers return `Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> 
 
 `Agent::stream()` and `Agent::stream_owned()` yield `Result<StreamEvent, AgentError>` (not `ProviderError`). When tools are available, they resolve tool call iterations internally via `complete()`, then yield: `ReasoningDelta(s)` (if reasoning present) → `TextDelta(content)` → `Done`. When no tools are configured, they delegate directly to the provider's `stream()`. CLI consumes streams with `tokio::select!` for Ctrl+C handling. Uses `async_stream::stream!` macro and `eventsource-stream` for SSE parsing. OpenAI-compatible providers (Anthropic, DeepSeek, OpenAI) set `tool_choice: "auto"` in the API request when tools are present.
 
-### Telegram Bot Architecture
+### Telegram Bot
 
-The dispatcher has two top-level branches: message updates and callback query updates. `Me` is injected at startup via `bot.get_me().await?` (required by `filter_command::<Command>()` to strip bot username suffixes like `/new@botname`).
+Dispatcher: under `dptree::entry()`, `filter_message` splits into command vs. non-command branches
+(→ `commands::handle_command` / `handlers::handle_message`); `filter_callback_query` →
+`commands::handle_callback`. `Me` is injected at startup via `bot.get_me().await?` (required by
+`filter_command::<Command>()` to strip `/cmd@botname` suffixes).
 
-```rust
-let handler = dptree::entry()
-    .branch(
-        Update::filter_message()
-            .branch(dptree::entry().filter_command::<Command>().endpoint(commands::handle_command))
-            .branch(dptree::entry().endpoint(handlers::handle_message)),
-    )
-    .branch(Update::filter_callback_query().endpoint(commands::handle_callback));
-```
+**Multi-session per chat** — `ChatSessionMap = Arc<RwLock<HashMap<i64, ChatSessions>>>` where
+`ChatSessions { sessions: Vec<Uuid>, active_idx: usize }`. Hot path uses `active_session_id()`;
+display/index commands always call `list_sessions()` fresh for stable 1-based ordering.
+`max_sessions_per_chat` is enforced only in `/new` (oldest evicted). `rebuild_chat_map` at startup
+groups `tg:<chat_id>` sessions with the most recently updated at `active_idx = 0`. Slash commands
+never invoke the LLM; `handle_message` returns early for any text starting with `/` to prevent
+command fall-through. For command/keyboard internals, see `synapse-telegram/src/commands.rs` (use
+`ast-index outline` first).
 
-**Multi-session per chat**: `ChatSessionMap` is `Arc<RwLock<HashMap<i64, ChatSessions>>>` where `ChatSessions { sessions: Vec<Uuid>, active_idx: usize }`. Regular messages use `active_session_id()` (hot path, no DB). Commands that display or index sessions (`/list`, `/switch N`, `/delete N`) always call `list_sessions()` fresh for consistent 1-based ordering. Session cap (`max_sessions_per_chat`) is enforced in `/new` only; the oldest session (last in `sessions` vec) is evicted. `rebuild_chat_map` at startup groups `tg:<chat_id>` sessions from the DB with the most recently updated session at `active_idx = 0`.
+**Markdown → Telegram pipeline** — LLM output is Markdown; Telegram supports HTML or MarkdownV2.
+HTML is used because only `&`, `<`, `>` need escaping (MarkdownV2 requires 18+ characters and is
+fragile for LLM output). `synapse-telegram/src/format.rs`:
 
-**Slash commands** (`commands.rs`) do **not** invoke the `Agent`/LLM — they are pure session management. Replies are plain text (no `ParseMode::Html`). Authorization reuses `handlers::is_authorized()`.
-
-**Interactive keyboards**: `/switch` and `/delete` without an argument send an `InlineKeyboardMarkup` (one button per session, callback data `"switch:N"` / `"delete:N"`, 1-based). `handle_callback` calls `answer_callback_query` immediately (before any DB calls) to dismiss the spinner, then executes `do_switch`/`do_delete`, then calls `edit_message_text` to replace the keyboard with a plain-text result. `do_switch` and `do_delete` re-fetch the session list from DB on every call (stale-index safety). `parse_session_arg(arg)` triages the `String` command argument: empty → show keyboard, numeric → execute directly, non-numeric → return error hint.
-
-**Defensive guard**: `handle_message` returns early with a hint for any text starting with `/` before reaching the LLM, preventing future command fall-through regressions.
-
-### Telegram Message Pipeline
-
-LLM responses are Markdown; Telegram requires HTML or MarkdownV2. HTML is used because it only needs `&`, `<`, `>` escaped — MarkdownV2 requires escaping 18+ characters and is fragile for LLM output.
-
-`synapse-telegram/src/format.rs` provides:
-- `md_to_telegram_html(markdown)` — walks `pulldown_cmark::Parser` events and emits Telegram's HTML subset (`<b>`, `<i>`, `<s>`, `<code>`, `<pre>`, `<a>`, `<blockquote>`). Tables → `<pre>` monospace; headings → `<b>`; images → text fallback.
-- `chunk_html(html)` — splits into ≤4096-char chunks with **balanced tags**: closes open tags at each split boundary and reopens them in the next chunk.
+- `md_to_telegram_html(markdown)` — walks `pulldown_cmark::Parser` events and emits Telegram's
+  HTML subset (`<b>`, `<i>`, `<s>`, `<code>`, `<pre>`, `<a>`, `<blockquote>`).
+- `chunk_html(html)` — splits into ≤4096-char chunks with **balanced tags** (closes open tags at
+  each boundary and reopens them in the next chunk).
 - `escape_html(text)` — escapes `&` `<` `>` only.
 
-In `handlers.rs`, the send loop attempts `ParseMode::Html` first; if Telegram rejects the HTML (e.g. malformed), it falls back to plain-text chunks via `chunk_message()`. `ERROR_REPLY` is always sent as plain text (no parse mode).
+The send loop in `handlers.rs` attempts `ParseMode::Html` first and falls back to plain text on
+rejection. `ERROR_REPLY` is always plain text.
 
-**Reasoning rendering**: streaming accumulates `ReasoningDelta` events into a separate buffer (never sent inline). On stream completion, if `telegram.show_reasoning == true`, the reasoning is truncated to `TELEGRAM_REASONING_PREVIEW_MAX_CHARS = 1500` chars via `synapse_core::text::truncate` (with a `…[reasoning truncated]` suffix) and prepended as `<blockquote>{escaped_reasoning}</blockquote>\n\n` before the first answer chunk. Reasoning is always persisted to SQLite regardless of the flag (required for DeepSeek tool-call history rule).
+**Reasoning rendering** — streaming accumulates `ReasoningDelta` events into a separate buffer
+(never sent inline). On stream completion, if `telegram.show_reasoning == true`, the reasoning is
+truncated to `TELEGRAM_REASONING_PREVIEW_MAX_CHARS = 1500` via `synapse_core::text::truncate` and
+prepended as `<blockquote>{escaped_reasoning}</blockquote>\n\n` before the first answer chunk.
+Reasoning is **always** persisted to SQLite regardless of the flag (required for DeepSeek
+tool-call history rule).
 
 ### Provider Factory
 
@@ -190,17 +150,33 @@ Reference: `docs/research/SY-22-deepseek-v4-pro.md`.
 
 Priority (highest first):
 1. `--config <path>` CLI flag (error if file missing)
-2. `./config.toml` (local directory)
-3. `~/.config/synapse/config.toml` (user default)
-4. Error — no silent defaults; exits with a clear message
+2. `./config.toml`
+3. `~/.config/synapse/config.toml`
+4. Error — no silent defaults
 
-`Config` top-level fields: `provider`, `api_key`, `model`, `max_tokens: u32` (serde default `4096` via `default_max_tokens()`; passed to every provider call), `system_prompt: Option<String>` (injected on-the-fly, never stored in DB), `system_prompt_file: Option<String>` (path to external prompt file; inline `system_prompt` wins if both set), `session`, `mcp`, `telegram`, `logging: Option<LoggingConfig>`, `reasoning_effort: Option<String>` (accepted values per DeepSeek: `"low"`, `"medium"`, `"high"`, `"max"`; only applied when provider is DeepSeek and model is in `REASONING_MODELS`; defaults to `"high"` internally), `cli: Option<CliConfig>` (CLI display preferences). `TelegramConfig` lives in `synapse-core/src/config.rs` and includes `max_sessions_per_chat: u32` (serde default `10`; manual `impl Default` — not derived — so `TelegramConfig::default()` returns `10` not `0`) and `show_reasoning: bool` (serde default `false` — privacy-preserving; set `true` to emit `<blockquote>reasoning</blockquote>` above the answer). `CliConfig` has `show_reasoning: bool` (serde default `true`; CLI is developer-facing). Bot token resolution: `TELEGRAM_BOT_TOKEN` env var > `telegram.token` in config. Empty `allowed_users` rejects all users (secure by default). `LoggingConfig` fields: `directory` (default `"logs"`), `max_files` (default `7`), `rotation` (`"daily"` / `"hourly"` / `"never"`, default `"daily"`); omitting `[logging]` keeps stdout-only behavior.
+Load-bearing resolution rules:
+- API key: env var (`DEEPSEEK_API_KEY` / `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`) > `api_key` in config.
+- Bot token: `TELEGRAM_BOT_TOKEN` env > `telegram.token` in config.
+- `system_prompt` (inline) wins over `system_prompt_file` when both are set.
+- `telegram.allowed_users = []` rejects **all** users (secure by default).
+- `TelegramConfig::default()` uses a manual `impl Default` (not derived) so the type-level default
+  (`max_sessions_per_chat = 10`) matches the serde default.
+
+Field-by-field reference: `docs/config-reference.md`.
 
 ### Storage
 
 SQLite via `sqlx` with WAL mode, connection pooling (max 5), automatic migrations. Database URL priority: `$DATABASE_URL` > `session.database_url` in config > default `sqlite:~/.config/synapse/sessions.db`. Uses UUID v7 (time-sortable) and RFC3339 timestamps. `create_storage(config) -> Box<dyn SessionStore>` factory in `storage/sqlite.rs`.
 
-Migrations live in `synapse-core/migrations/` with timestamp-prefixed filenames (e.g. `20260208_002_add_tool_columns.sql`). Each adds nullable columns — never removes or renames. `StoredMessage` (`session.rs`) includes `reasoning_content: Option<String>` (added in `20260510_004_add_reasoning_content.sql`) which round-trips with `Message.reasoning_content`.
+Migrations live in `synapse-core/migrations/` with timestamp-prefixed filenames. Current set:
+`20250125_001_initial.sql`, `20260208_002_add_tool_columns.sql`,
+`20260226_003_drop_system_prompt.sql`, `20260510_004_add_reasoning_content.sql`.
+
+**Migration rule:** prefer nullable column adds. Column drops/renames are only acceptable when the
+field is fully unused — migration 003 (`drop_system_prompt`) is the documented precedent: the
+column was dead after SY-14 moved system prompts to runtime injection via `Agent::build_messages`.
+`StoredMessage` (`session.rs`) includes `reasoning_content: Option<String>` (added in migration
+004) which round-trips with `Message.reasoning_content`.
 
 ### Error Types
 
@@ -237,11 +213,9 @@ src/
 
 ## Workspace Crates
 
-| Crate | Purpose |
-|-------|---------|
-| `synapse-core` | Core library: agent orchestrator, config, providers, storage, MCP, message types |
-| `synapse-cli` | CLI binary: one-shot, stdin, and session modes via `clap`; `-p`/`--provider` flag overrides config provider; REPL split into `repl/app.rs`, `repl/render.rs`, `repl/input.rs`; session commands in `commands.rs` |
-| `synapse-telegram` | Telegram bot interface: teloxide long-polling, two-branch dispatcher (messages + callback queries), user allowlist auth, `TelegramConfig`; `format.rs` converts LLM Markdown → Telegram HTML before sending; `commands.rs` implements 7 slash commands (`/start`, `/help`, `/new`, `/history` (last 10 messages, truncated to 150 chars), `/list`, `/switch [N]`, `/delete [N]`) plus `handle_callback` for inline keyboard button taps |
+- `synapse-core` — library (traits + adapters; depends inward only).
+- `synapse-cli` — `synapse` binary; `-p`/`--provider` overrides `config.provider` at runtime.
+- `synapse-telegram` — `synapse-telegram` binary; teloxide long-polling.
 
 ## CI/CD
 
@@ -269,16 +243,14 @@ The `/release` skill (`.claude/skills/release/SKILL.md`) runs pre-release checks
 
 ## Key Technology Decisions
 
-- **Rust**: Nightly, Edition 2024, resolver v3
-- **Async Runtime**: Tokio (multi-thread)
-- **HTTP**: `reqwest` with `json` + `stream` features
-- **SSE**: `eventsource-stream` + `async-stream`
-- **Database**: `sqlx` with `runtime-tokio` + `sqlite` features
-- **CLI**: `clap` for args, `ratatui` + `crossterm` for REPL UI
-- **MCP**: `rmcp` for Model Context Protocol
-- **Telegram**: `teloxide` 0.17 with `macros` feature, dptree dependency injection; `pulldown-cmark` 0.13 for Markdown→HTML conversion in `format.rs`
-- **Tracing**: `tracing` 0.1 in `synapse-core` and `synapse-cli` (structured spans/events); `tracing-appender` 0.2 with non-blocking rolling-file writer in Telegram only. CLI uses plain `EnvFilter::from_default_env()`. Telegram bot always enables `synapse_telegram=info` and `synapse_core=info` on top of `RUST_LOG` via `DEFAULT_DIRECTIVES`.
-- **IDs**: `uuid` v4/v7
+Toolchain is Rust nightly, Edition 2024, resolver v3 (pinned via `rust-toolchain.toml`). Most crate
+choices are unsurprising (see `Cargo.toml`). Non-obvious ones:
+
+- **MCP**: `rmcp` (the Rust MCP SDK).
+- **Telegram Markdown→HTML**: `pulldown-cmark` 0.13 in `synapse-telegram/src/format.rs`.
+- **Tracing split**: CLI uses plain `EnvFilter::from_default_env()`. Telegram bot adds
+  `tracing-appender` 0.2 (non-blocking rolling-file writer) and always enables
+  `synapse_telegram=info` + `synapse_core=info` on top of `RUST_LOG` via `DEFAULT_DIRECTIVES`.
 
 ## Documentation
 
@@ -290,47 +262,19 @@ Essential docs to read before working:
 5. `docs/conventions.md` — code rules (DO and DON'T)
 6. `docs/workflow.md` — step-by-step collaboration process with quality gates
 
-Ticket artifacts live in: `docs/prd/`, `docs/research/`, `docs/plan/`, `docs/tasklist/`, `docs/summary/`, `reports/qa/`.
+Per-ticket artifacts: `docs/prd/`, `docs/research/`, `docs/plan/`, `docs/tasklist/`,
+`docs/phase/`, `docs/summary/`, `reports/qa/`. Operational docs: `docs/deploy.md`,
+`docs/relocate-synapse.md`, `docs/releases/`. Ticket history index: `docs/tickets.md`.
 
 ## Workflow
 
-**Starting a new feature (full automated):**
-```
-/feature-development SY-<N> @docs/<description>.md
-```
+Follow `docs/workflow.md`. Start a new feature with `/feature-development SY-<N> @docs/<file>.md`
+(automated) or `/analysis SY-<N> @docs/<file>.md` (manual). **Three mandatory checkpoints —
+never skip:** *Proceed with this approach?*, *Ready to commit?*, *Continue to next task?*
 
-**Starting a new feature (manual):**
-```
-/analysis SY-<N> @docs/<description>.md
-```
+## Ticket History
 
-**Follow `docs/workflow.md` strictly. Three mandatory checkpoints — never skip:**
-- "Proceed with this approach?"
-- "Ready to commit?"
-- "Continue to next task?"
-
-## Completed Tickets
-
-| Ticket | Description | Summary |
-|--------|-------------|---------|
-| SY-1 | Project Foundation | Workspace structure with 3 crates |
-| SY-2 | CI/CD Pipeline | GitHub Actions with check + audit jobs |
-| SY-3 | Echo CLI | CLI with clap, one-shot and stdin input modes |
-| SY-4 | Configuration | TOML config loading with multi-location priority |
-| SY-5 | Provider Abstraction | LlmProvider trait, Message/Role types, MockProvider |
-| SY-6 | Anthropic Provider | AnthropicProvider with Claude API, async CLI with tokio |
-| SY-7 | DeepSeek Provider | DeepSeekProvider with OpenAI-compatible API, provider factory pattern |
-| SY-8 | Streaming Responses | Token-by-token streaming via SSE, DeepSeekProvider streaming, Ctrl+C handling |
-| SY-9 | Session Storage | SQLite persistence, SessionStore trait, session commands, auto-cleanup |
-| SY-10 | CLI REPL | Interactive TUI with ratatui/crossterm, multi-turn conversations, streaming, session resume |
-| SY-11 | MCP Integration | Agent struct with tool call loop, MCP client via rmcp, tool discovery |
-| SY-13 | Telegram Bot | teloxide bot, session-per-chat persistence, user allowlist auth, TelegramConfig |
-| SY-14 | System Prompt | `system_prompt` in Config and Agent, `build_messages()` on-the-fly injection |
-| SY-15 | File Logging | `LoggingConfig` in core, `tracing-appender` layered subscriber in Telegram bot |
-| SY-16 | Code Refactoring | Dead code removal, `openai_compat.rs` shared base, magic-string constants, structured tracing, `Agent::from_config()`, `init_mcp_client()` in core, REPL file split, API surface tightened |
-| SY-17 | Telegram Markdown Formatting | `format.rs` with `md_to_telegram_html` + `chunk_html`; HTML parse mode with plain-text fallback in handlers |
-| SY-18 | Telegram Bot Commands | `max_tokens: u32` in `Config` (serde default 4096); `/help`, `/new`, `/history`, `/list`, `/switch N`, `/delete N` commands; `ChatSessions` multi-session struct; branched dispatcher; `max_sessions_per_chat` config cap |
-| SY-19 | Telegram Command Fixes & Interactive Keyboards | Fix `/switch`/`/delete` fall-through (`String` instead of `usize`); `parse_session_arg`; `/start` command; defensive guard in `handle_message`; inline keyboards with `InlineKeyboardMarkup`; `handle_callback` with `do_switch`/`do_delete` shared logic; dispatcher extended to handle `CallbackQuery` |
-| SY-20 | Improve /history Command | `/history` now shows last 10 user/assistant messages only (filtered from full history), truncated to 150 chars with `...`; `truncate_content` and `format_history` extracted as pure helpers for testability |
-| SY-21 | Code Refactoring II | Unified `text::truncate` in core; `OpenAiCompatProvider` struct in `openai_compat.rs` (DeepSeek/OpenAI are thin wrappers); extracted submodules: `openai_compat/types.rs`, `openai_compat/tests.rs`, `anthropic/types.rs`, `config/tests.rs`, `storage/sqlite/tests.rs`, `commands/keyboard.rs`, `commands/tests.rs`, `format/chunk.rs`, `startup.rs`, `startup/tests.rs` |
-| SY-22 | DeepSeek V4 Pro Reasoning Model | `Message.reasoning_content`, `StreamEvent::ReasoningDelta` + `#[non_exhaustive]`, wire-format extensions in `openai_compat` (`ThinkingConfig`, `ReasoningSettings`, `thinking`/`reasoning_effort` request fields), reasoning-aware DeepSeek factory with effort auto-escalation, agent loop preservation of reasoning on tool-call turns, SQLite migration + storage round-trip, REPL dim/italic rendering + one-shot stderr routing, Telegram `<blockquote>` rendering with `show_reasoning` flag |
+Short-form lookup table: `docs/tickets.md`. Detailed release notes: `CHANGELOG.md`. Active ticket
+ID: `docs/.active_ticket`. The most recent ticket (SY-22, DeepSeek V4 Pro reasoning) is merged on
+`master` but unreleased — see `[Unreleased]` in `CHANGELOG.md`; workspace version is still
+`0.21.3`.

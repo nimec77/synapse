@@ -7,7 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- Add DeepSeek V4 Pro reasoning model support with chain-of-thought streaming, SQLite persistence, dim REPL rendering, and configurable Telegram `<blockquote>` display (SY-22)
+### Added
+
+- **SY-22: DeepSeek V4 Pro Reasoning Model** — End-to-end support for chain-of-thought reasoning
+  models, surfacing thinking traces in every interface while preserving the existing tool-call
+  loop and on-disk session contract:
+  - **Core data model** (`synapse-core/src/message.rs`): `Message.reasoning_content: Option<String>`
+    added to carry chain-of-thought on `Assistant` messages. Dropped from outbound history on
+    text-only turns to save tokens; **always** replayed on subsequent API calls when the same
+    message also has `tool_calls.is_some()` (DeepSeek thinking-mode tool-history rule).
+  - **Streaming** (`synapse-core/src/provider/streaming.rs`): `StreamEvent::ReasoningDelta(String)`
+    variant added; the enum is now `#[non_exhaustive]` so future Anthropic/OpenAI reasoning
+    variants do not break downstream `match` arms. `Agent::stream` / `stream_owned` now yield
+    `Result<StreamEvent, AgentError>` and, when tools are active, emit `ReasoningDelta` →
+    `TextDelta` → `Done` after resolving tool iterations via `complete()`.
+  - **OpenAI-compatible wire format** (`synapse-core/src/provider/openai_compat.rs`):
+    `ThinkingConfig` and `ReasoningSettings` types added; `ApiRequest`/`StreamingApiRequest` gained
+    `thinking` and `reasoning_effort` fields (omitted via `skip_serializing_if` when reasoning is
+    off). `build_api_messages` preserves `reasoning_content` on assistant messages with tool calls
+    and strips it otherwise, encoding the tool-history rule in one place.
+  - **Reasoning-aware factory** (`synapse-core/src/provider/factory.rs` + `deepseek.rs`):
+    `REASONING_MODELS = ["deepseek-v4-pro"]`; when `provider = "deepseek"` and model is in the
+    list, the factory attaches `ReasoningSettings` and emits `tracing::info!` with the chosen
+    effort. `resolve_reasoning_effort` priority: explicit `config.reasoning_effort` >
+    auto-escalation to `"max"` when MCP tools are configured > default `"high"`. A
+    `tracing::warn!` fires if `reasoning_effort` is set on a non-DeepSeek provider (forward-compat,
+    not an error).
+  - **Storage** (`synapse-core/migrations/20260510_004_add_reasoning_content.sql`,
+    `synapse-core/src/session.rs`, `storage/sqlite.rs`): new nullable `reasoning_content TEXT`
+    column on `messages`; `StoredMessage` round-trips the field. Persisted regardless of the
+    display flags so multi-turn tool flows remain compliant.
+  - **Config** (`synapse-core/src/config.rs`): top-level `reasoning_effort: Option<String>`
+    accepting `"low"` / `"medium"` / `"high"` / `"max"`; new `CliConfig { show_reasoning: bool }`
+    (serde default `true`, developer-facing) and `TelegramConfig.show_reasoning: bool` (serde
+    default `false`, privacy-preserving).
+  - **CLI REPL** (`synapse-cli/src/repl/render.rs`): reasoning rendered above the answer with a
+    dim/italic style so it is visually distinct from `TextDelta` output; one-shot mode routes
+    reasoning to stderr to keep stdout pipe-clean for downstream tools.
+  - **Telegram bot** (`synapse-telegram/src/handlers.rs`): when `telegram.show_reasoning = true`,
+    reasoning is truncated to `TELEGRAM_REASONING_PREVIEW_MAX_CHARS = 1500` via
+    `synapse_core::text::truncate` and prepended as `<blockquote>{escaped}</blockquote>\n\n`
+    before the first answer chunk; reasoning is always persisted to SQLite regardless of the flag.
+  - Reference: `docs/research/SY-22-deepseek-v4-pro.md`.
+
+### Security
+
+- **Dependency audit fix** — `Cargo.lock`-only update resolving four RUSTSEC advisories:
+  `rustls-webpki` (0.103.10 → 0.103.13) patches RUSTSEC-2026-0098, -0099, and -0104; `rand`
+  (0.8.5 → 0.8.6 and 0.9.2 → 0.9.4) patches RUSTSEC-2026-0097 (unsoundness). No API or behaviour
+  changes.
 
 ## [0.21.3] - 2026-03-22
 
