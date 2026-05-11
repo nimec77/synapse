@@ -1,119 +1,96 @@
 ---
-description: "Review changes for a ticket"
+name: run-reviewer
+description: "Use when changes for a ticket need code review against the plan and PRD before merging"
 argument-hint: "[ticket-id]"
-allowed-tools: Read, Write, Glob, Grep, rust-analyzer-lsp, AskUserQuestion
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash, rust-analyzer-lsp, AskUserQuestion
 model: opus
 ---
 
-Use the `reviewer` subagent.
+You review the diff for a ticket, verify it satisfies the PRD and plan, and emit one of three machine-readable status markers as the final line of your output.
 
 ## Ticket Resolution
 
-If the ticket ID is not provided as a parameter (`$1` is empty):
-1. Read the file `docs/.active_ticket`
-2. Use the first non-empty line as the ticket ID
-3. If the file does not exist or contains no valid ticket ID, display an error message: "Error: No ticket specified. Provide a ticket ID as a parameter or set it in docs/.active_ticket" and terminate immediately.
+If `$1` is empty:
+1. Read `docs/.active_ticket`.
+2. Use the first non-empty line.
+3. If still empty: print `Error: No ticket specified. Provide a ticket ID as a parameter or set it in docs/.active_ticket` and stop.
 
-## Run-reviewer Steps
+## Source-of-Truth Rules
 
-### Step 1: Gather Context
+Apply the requirements-immutability rules — see `../_shared/requirements-immutability.md`. **Requirements deviations are always blocking.** Don't smooth them over because the implementation "looks reasonable".
+
+## Steps
+
+### Step 1 — Gather context
 
 Read:
-- `docs/prd/$1.prd.md`
-- `docs/plan/$1.md`
-- `docs/tasklist/$1.md`
-- `docs/conventions.md`
+- `docs/prd/$1.prd.md`,
+- `docs/plan/$1.md`,
+- `docs/tasklist/$1.md`,
+- `docs/conventions.md` and `CLAUDE.md`.
 
-### Step 2: Analyze Changes
+### Step 2 — Inspect changes
 
-Analyze the diff for changes related to ticket `$1` (use `git diff` or check modified files).
+Run `git diff` and identify the files modified for ticket `$1`. Use `ast-index` for symbol-level navigation if the diff touches a large file (see `.claude/rules/ast-index.md`).
 
-### Step 3: Requirements Compliance Check (CRITICAL)
+### Step 3 — Requirements compliance check (CRITICAL)
 
-**Before reviewing code quality, verify that the implementation matches ALL requirements from the PRD and plan.**
+For every requirement in the PRD, plan, and any referenced phase doc:
+1. Find where it should be implemented.
+2. Verify the implementation matches the spec exactly (e.g. PRD says `UUID v8` → code uses `Uuid::new_v8()`, not v4).
+3. Any mismatch is a **blocking** issue regardless of how minor it looks.
 
-1. Read all requirements from `docs/prd/$1.prd.md` and `docs/plan/$1.md`
-2. Also read any referenced documentation (e.g., `docs/phase/phase-*.md`, `docs/vision.md`)
-3. For EACH requirement, verify:
-   - Is it implemented in the code?
-   - Does the implementation match the specification exactly?
+### Step 4 — Categorize findings
 
-**Requirements deviations are ALWAYS blocking issues.**
+Three buckets:
 
-Examples of requirements deviations:
-- PRD specifies "UUID v8" but code uses UUID v4
-- PRD specifies "DATABASE_URL from config.toml" but code only reads from env var
-- PRD specifies a specific API contract that isn't implemented
+1. **Blocking** — requirement deviation, security issue, breaking bug, missing required functionality.
+2. **Important** — quality issues that materially help (validation, edge cases, missing safety comments).
+3. **Cosmetic** — naming, style, test coverage for unimportant edge cases.
 
-### Step 4: Generate Review
+### Step 5 — Decide and report
 
-Generate a structured review with three categories:
+#### If any blocking issue exists
 
-1. **Blocking** - Issues that MUST be fixed before merging:
-   - **Requirements deviations** (implementation doesn't match PRD/plan specifications)
-   - Security issues
-   - Breaking bugs
-   - Missing required functionality
-2. **Important** - Recommended fixes that improve quality (safety comments, validation, edge cases)
-3. **Cosmetic** - Minor improvements (naming, style, test coverage for edge cases)
+1. Add a `## Review Fixes` section to `docs/tasklist/$1.md` (use `Edit`):
+   - One task per blocking issue, numbered `RF1`, `RF2`, … to distinguish from original tasks.
+   - Format:
+     ```markdown
+     - [ ] **RF1: <short description>**
+       - <details>
+       - **Acceptance:** <criterion>
+     ```
+2. Set `Status: REVIEW_BLOCKED` in `docs/tasklist/$1.md`.
+3. Print the issue list.
+4. **As the final line of your output, emit:** `REVIEW_BLOCKED`
 
-### Step 5: Handle Review Results
+#### If only Important and/or Cosmetic issues exist
 
-#### If Blocking Issues Found
+1. `AskUserQuestion`:
+   - question: `Non-critical issues were found during code review. Would you like to fix them?`
+   - header: `Review Fixes`
+   - options: `Fix all issues` / `Fix important only` / `Skip fixes`
+2. **If `Fix all` or `Fix important only`:**
+   - Add a `## Review Fixes` section to `docs/tasklist/$1.md` with the selected issues as `RF<n>` tasks.
+   - Set `Status: REVIEW_NEEDS_FIXES`.
+   - Print `Added <N> tasks to tasklist for review fixes.`
+   - **Final line:** `REVIEW_NEEDS_FIXES`
+3. **If `Skip fixes`:**
+   - Do not modify the tasklist.
+   - Print the acknowledged-but-skipped findings.
+   - **Final line:** `REVIEW_OK`
 
-1. Report: "REVIEW_BLOCKED: The following issues must be fixed before merging:"
-2. List all blocking issues
-3. Add tasks to `docs/tasklist/$1.md` under a new section `## Review Fixes`:
-   - Each blocking issue becomes a task with `- [ ]`
-   - Include acceptance criteria for each task
-4. Update the tasklist status from `IMPLEMENT_STEP_OK` to `REVIEW_BLOCKED`
-5. Terminate with message: "Review blocked. New tasks added to tasklist for required fixes."
+#### If no issues exist
 
-#### If Only Non-Blocking Issues Found (Important and/or Cosmetic)
+- Print `No issues found. Code is ready for QA.`
+- **Final line:** `REVIEW_OK`
 
-1. Report the review findings
-2. Use AskUserQuestion to ask the user:
-   - Question: "Non-critical issues were found during code review. Would you like to fix them?"
-   - Header: "Review Fixes"
-   - Options:
-     - Label: "Fix all issues", Description: "Add tasks for all important and cosmetic issues"
-     - Label: "Fix important only", Description: "Add tasks for important issues, skip cosmetic"
-     - Label: "Skip fixes", Description: "Proceed without fixing non-critical issues"
+### Step 6 — Final-line contract
 
-3. Based on user response:
+The very last line of your output must be exactly one of these three tokens (no quotes, no trailing punctuation):
 
-   **If "Fix all issues" or "Fix important only":**
-   - Add tasks to `docs/tasklist/$1.md` under a new section `## Review Fixes`:
-     - Each selected issue becomes a task with `- [ ]`
-     - Include acceptance criteria for each task
-   - Update the tasklist status from `IMPLEMENT_STEP_OK` to `REVIEW_NEEDS_FIXES`
-   - Report: "REVIEW_NEEDS_FIXES: Added N tasks to tasklist for review fixes."
+- `REVIEW_OK`
+- `REVIEW_NEEDS_FIXES`
+- `REVIEW_BLOCKED`
 
-   **If "Skip fixes":**
-   - Report: "REVIEW_OK: Non-critical issues acknowledged but skipped."
-   - Do not modify the tasklist
-
-#### If No Issues Found
-
-1. Report: "REVIEW_OK: No issues found. Code is ready for QA."
-
-### Step 6: Return Status
-
-The command must clearly output one of these statuses at the end:
-- `REVIEW_OK` - No fixes needed, proceed to QA
-- `REVIEW_NEEDS_FIXES` - Non-critical fixes requested, new tasks added
-- `REVIEW_BLOCKED` - Critical fixes required, new tasks added
-
-## Task Format
-
-When adding tasks to the tasklist, use this format:
-
-```markdown
-## Review Fixes
-
-- [ ] **RF1: [Short description of the fix]**
-  - [Details of what needs to be changed]
-  - **Acceptance:** [Criteria for completion]
-```
-
-Number tasks sequentially (RF1, RF2, etc.) to distinguish them from original implementation tasks.
+`feature-development` and `dev-cycle` parse the last line to decide whether to loop back to implementation. See `../_shared/status-markers.md`.

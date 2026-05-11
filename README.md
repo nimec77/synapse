@@ -166,10 +166,16 @@ provider = "deepseek"
 # api_key = "your-api-key-here"
 
 # Model name
-# DeepSeek: deepseek-chat, deepseek-reasoner
+# DeepSeek: deepseek-chat, deepseek-v4-pro (reasoning)
 # Anthropic: claude-sonnet-4-6, claude-opus-4-6
 # OpenAI: gpt-4o, o3-mini
 model = "deepseek-chat"
+
+# Reasoning effort for DeepSeek V4 Pro (ignored for other providers/models).
+# Values: "low" | "medium" | "high" (default) | "max"
+# Auto-escalates to "max" when MCP tools are configured and this is unset.
+# Recommendation: use max_tokens = 8192 or higher when reasoning_effort = "max".
+# reasoning_effort = "high"
 
 # System prompt prepended to every conversation (never stored in the database).
 # system_prompt = "You are a helpful programming assistant."
@@ -188,9 +194,13 @@ auto_cleanup = true      # run cleanup on startup
 # Path to the MCP servers JSON file. Also overridable via SYNAPSE_MCP_CONFIG env var.
 # config_path = "~/.config/synapse/mcp_servers.json"
 
+[cli]
+# show_reasoning = true    # default: show reasoning in REPL (dim/italic) and on stderr (one-shot)
+
 [telegram]
 # token = "123456:ABC-DEF..."   # overridable via TELEGRAM_BOT_TOKEN env var
 # allowed_users = [123456789, 987654321]
+# show_reasoning = false   # default: hide reasoning (privacy); set true for <blockquote> prefix
 
 [logging]
 # File logging for synapse-telegram. Omit this section for stdout-only output.

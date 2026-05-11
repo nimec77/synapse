@@ -8,6 +8,16 @@ use serde::{Deserialize, Serialize};
 /// SSE "[DONE]" marker sent by OpenAI-compatible streaming APIs.
 pub(in super::super) const SSE_DONE_MARKER: &str = "[DONE]";
 
+/// Enables thinking/reasoning mode on supporting models (e.g. DeepSeek V4 Pro).
+///
+/// Serialises as `{"type": "enabled"}`. Only included in request bodies when the
+/// provider's `reasoning` field is `Some(_)`.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub(in super::super) struct ThinkingConfig {
+    #[serde(rename = "type")]
+    pub(in super::super) kind: String,
+}
+
 /// A single message in the API request body.
 #[derive(Debug, Serialize)]
 pub(in super::super) struct ApiMessage {
@@ -22,6 +32,13 @@ pub(in super::super) struct ApiMessage {
     /// Tool call ID (present in tool result messages).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(in super::super) tool_call_id: Option<String>,
+    /// Chain-of-thought reasoning content.
+    ///
+    /// Included on outbound assistant messages only when the same message also
+    /// carries `tool_calls` (DeepSeek thinking-mode requirement). Omitted on
+    /// text-only turns to save tokens.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(in super::super) reasoning_content: Option<String>,
 }
 
 /// Request body for a non-streaming Chat Completions API call.
@@ -40,6 +57,16 @@ pub(in super::super) struct ApiRequest {
     /// Omitted when `None` so the API default (`"auto"`) applies implicitly.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(in super::super) tool_choice: Option<String>,
+    /// Enables thinking mode (DeepSeek V4 Pro and other reasoning models).
+    ///
+    /// Only included when the provider has reasoning enabled.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(in super::super) thinking: Option<ThinkingConfig>,
+    /// Reasoning effort level ("low", "medium", "high", "max").
+    ///
+    /// Only included when the provider has reasoning enabled.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(in super::super) reasoning_effort: Option<String>,
 }
 
 /// Request body for a streaming Chat Completions API call.
@@ -56,6 +83,16 @@ pub(in super::super) struct StreamingApiRequest {
     /// Optional tool definitions.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(in super::super) tools: Option<Vec<OaiTool>>,
+    /// Enables thinking mode (DeepSeek V4 Pro and other reasoning models).
+    ///
+    /// Only included when the provider has reasoning enabled.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(in super::super) thinking: Option<ThinkingConfig>,
+    /// Reasoning effort level ("low", "medium", "high", "max").
+    ///
+    /// Only included when the provider has reasoning enabled.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(in super::super) reasoning_effort: Option<String>,
 }
 
 /// Tool definition in OpenAI-compatible format.
@@ -109,6 +146,9 @@ pub(in super::super) struct ChoiceMessage {
     #[serde(default)]
     pub(in super::super) content: Option<String>,
     pub(in super::super) tool_calls: Option<Vec<OaiToolCall>>,
+    /// Chain-of-thought reasoning produced by reasoning-capable models.
+    #[serde(default)]
+    pub(in super::super) reasoning_content: Option<String>,
 }
 
 /// Error response body from the API.
@@ -144,5 +184,35 @@ pub(in super::super) struct StreamChoice {
 /// Delta content in a streaming choice.
 #[derive(Debug, Deserialize)]
 pub(in super::super) struct StreamDelta {
+    #[serde(default)]
     pub(in super::super) content: Option<String>,
+    /// Incremental reasoning/thinking token (DeepSeek V4 Pro in thinking mode).
+    #[serde(default)]
+    pub(in super::super) reasoning_content: Option<String>,
+    /// Tool call delta chunks (present when the model invokes tools).
+    /// Deserialized for completeness; not yet consumed at runtime.
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub(in super::super) tool_calls: Option<Vec<OaiToolCallDelta>>,
+}
+
+/// Incremental tool-call chunk in a streaming delta.
+#[derive(Debug, Deserialize, Clone)]
+#[allow(dead_code)]
+pub(in super::super) struct OaiToolCallDelta {
+    pub(in super::super) index: usize,
+    #[serde(default)]
+    pub(in super::super) id: Option<String>,
+    #[serde(default)]
+    pub(in super::super) function: Option<OaiToolCallFunctionDelta>,
+}
+
+/// Partial function data inside a streaming tool-call delta.
+#[derive(Debug, Deserialize, Clone)]
+#[allow(dead_code)]
+pub(in super::super) struct OaiToolCallFunctionDelta {
+    #[serde(default)]
+    pub(in super::super) name: Option<String>,
+    #[serde(default)]
+    pub(in super::super) arguments: Option<String>,
 }

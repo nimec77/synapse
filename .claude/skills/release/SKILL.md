@@ -1,5 +1,6 @@
 ---
-description: "Bump workspace version, update CHANGELOG, commit, and tag a release"
+name: release
+description: "Use when shipping a new version of the workspace (patch, minor, or major)"
 argument-hint: "<patch|minor|major>"
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 model: sonnet
@@ -163,6 +164,12 @@ Release complete!
 
 Next steps:
   git push && git push --tags
+```
+
+Then emit, on its own final line (machine-readable for any orchestrator chaining off this skill — see `../_shared/status-markers.md`):
+
+```
+RELEASE_PUBLISHED
 ```
 
 **WORKFLOW COMPLETE**

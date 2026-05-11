@@ -197,6 +197,8 @@ synapse/
 │     ▼     ▼          ▼              ▼                                   │
 │ ┌───────┐┌────────┐┌────────┐┌──────────────┐                          │
 │ │Claude ││DeepSeek││ OpenAI ││Mock(test-only)│                         │
+│ │       ││(chat,  ││        ││              │                         │
+│ │       ││v4-pro) ││        ││              │                         │
 │ └───────┘└────────┘└────────┘└──────────────┘                          │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
@@ -216,7 +218,7 @@ synapse/
 
 | Integration | Protocol | Purpose |
 |-------------|----------|---------|
-| DeepSeek API | HTTPS REST + SSE | DeepSeek models (default) |
+| DeepSeek API | HTTPS REST + SSE | DeepSeek models: `deepseek-chat` (standard), `deepseek-v4-pro` (reasoning/thinking mode with `thinking`+`reasoning_effort` request fields) |
 | Anthropic API | HTTPS REST + SSE | Claude LLM provider |
 | OpenAI API | HTTPS REST + SSE | GPT models |
 | MCP Servers | JSON-RPC over stdio/SSE | Tool execution |

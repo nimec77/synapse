@@ -93,10 +93,17 @@ async fn main() -> Result<()> {
     let (session, history) =
         session::load_or_create_session(storage.as_ref(), &config, args.session).await?;
 
-    // Build conversation history
+    // Build conversation history, preserving reasoning_content for the
+    // DeepSeek tool-call history rule on session resume.
     let mut messages: Vec<Message> = history
         .iter()
-        .map(|m| Message::new(m.role, &m.content))
+        .map(|m| {
+            let mut msg = Message::new(m.role, &m.content);
+            if let Some(ref r) = m.reasoning_content {
+                msg = msg.with_reasoning(r.clone());
+            }
+            msg
+        })
         .collect();
 
     // Add new user message
@@ -115,12 +122,13 @@ async fn main() -> Result<()> {
     let agent = Agent::from_config(&config, mcp_client).context("Failed to create agent")?;
 
     // Stream response via agent (scoped to release borrows before shutdown)
-    let response_content = {
+    let (response_content, response_reasoning) = {
         let stream = agent.stream(&mut messages);
         tokio::pin!(stream);
 
         let mut stdout = io::stdout();
         let mut content = String::new();
+        let mut reasoning = String::new();
 
         loop {
             tokio::select! {
@@ -131,12 +139,27 @@ async fn main() -> Result<()> {
                             print!("{}", text);
                             stdout.flush().context("Failed to flush stdout")?;
                         }
+                        Some(Ok(StreamEvent::ReasoningDelta(r))) => {
+                            // Route reasoning to stderr when show_reasoning is true (default).
+                            // Always accumulate for storage regardless of the display flag.
+                            let show_reasoning = config
+                                .cli
+                                .as_ref()
+                                .is_none_or(|c| c.show_reasoning);
+                            if show_reasoning {
+                                eprint!("{}", r);
+                            }
+                            reasoning.push_str(&r);
+                        }
                         Some(Ok(StreamEvent::Done)) | None => {
                             println!(); // Final newline
                             break;
                         }
                         Some(Err(e)) => {
                             return Err(e).context("Agent error");
+                        }
+                        Some(Ok(_)) => {
+                            // Unknown future StreamEvent variant — ignore.
                         }
                     }
                 }
@@ -147,12 +170,16 @@ async fn main() -> Result<()> {
             }
         }
 
-        content
+        (content, reasoning)
     };
 
-    // Store assistant response
+    // Store assistant response — always include reasoning_content so
+    // multi-turn tool conversations honour the DeepSeek history rule.
     if !response_content.is_empty() {
-        let assistant_msg = StoredMessage::new(session.id, Role::Assistant, &response_content);
+        let mut assistant_msg = StoredMessage::new(session.id, Role::Assistant, &response_content);
+        if !response_reasoning.is_empty() {
+            assistant_msg = assistant_msg.with_reasoning(response_reasoning);
+        }
         storage
             .add_message(&assistant_msg)
             .await

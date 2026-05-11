@@ -259,11 +259,11 @@ impl SessionStore for SqliteStore {
 
     async fn add_message(&self, message: &StoredMessage) -> Result<(), StorageError> {
         tracing::debug!(session_id = %message.session_id, role = %message.role.as_str(), "sqlite: adding message");
-        // Insert message
+        // Insert message (including the reasoning_content column added in SY-22).
         sqlx::query(
             r#"
-            INSERT INTO messages (id, session_id, role, content, tool_calls, tool_results, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO messages (id, session_id, role, content, tool_calls, tool_results, reasoning_content, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(message.id.to_string())
@@ -272,6 +272,7 @@ impl SessionStore for SqliteStore {
         .bind(&message.content)
         .bind(&message.tool_calls)
         .bind(&message.tool_results)
+        .bind(&message.reasoning_content)
         .bind(message.timestamp.to_rfc3339())
         .execute(&self.pool)
         .await
@@ -295,7 +296,7 @@ impl SessionStore for SqliteStore {
     async fn get_messages(&self, session_id: Uuid) -> Result<Vec<StoredMessage>, StorageError> {
         let rows = sqlx::query(
             r#"
-            SELECT id, session_id, role, content, tool_calls, tool_results, timestamp
+            SELECT id, session_id, role, content, tool_calls, tool_results, reasoning_content, timestamp
             FROM messages
             WHERE session_id = ?
             ORDER BY timestamp ASC
@@ -331,6 +332,7 @@ impl SessionStore for SqliteStore {
                 content: row.get("content"),
                 tool_calls: row.get("tool_calls"),
                 tool_results: row.get("tool_results"),
+                reasoning_content: row.get("reasoning_content"),
                 timestamp,
             });
         }

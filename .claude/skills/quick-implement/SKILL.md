@@ -1,142 +1,129 @@
 ---
-description: "Quickly implement tasks from a phase file with automated coding and review"
+name: quick-implement
+description: "Use when a phase file lists ready tasks that need automated coding plus review without the full orchestrated cycle"
 argument-hint: "[phase-file-path]"
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Task, AskUserQuestion
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Agent, AskUserQuestion
 model: sonnet
 ---
+
+You orchestrate a single `general-purpose` coder subagent (writes code **and** tests in one pass) and a `general-purpose` reviewer subagent (verifies build + quality) to drive every unchecked task in a phase file to completion. Subagent invocation pattern: see `../_shared/subagent-registry.md`.
 
 ## Input Validation
 
 If `$1` is empty or the file does not exist:
-- Display: "Error: Phase file path required. Usage: /quick-implement docs/phase/phase-16.md"
-- Terminate immediately.
+- Print `Error: Phase file path required. Usage: /quick-implement docs/phase/phase-N.md` and stop.
 
----
+## Requirements
 
-## CRITICAL: REQUIREMENTS ARE IMMUTABLE
+Apply the requirements-immutability rules — see `../_shared/requirements-immutability.md`. The coder must implement what the phase file and project docs specify; if existing code contradicts the spec, the code changes.
 
-Agents MUST implement code according to the requirements in the phase file and project docs.
-- Implement exactly what the task specifies
-- If existing code contradicts requirements, modify the code
-- Report ambiguities via AskUserQuestion — never guess
+## Workflow
 
----
+### Step 1 — Context
 
-## Orchestrator Workflow
+Read in order:
+1. The phase file (`$1`) — the task list.
+2. `docs/idea.md` — project description (if present, skip if missing).
+3. `docs/vision.md` — architecture and phase ordering.
+4. `docs/conventions.md` — coding rules.
 
-You coordinate a `coder` agent (writes code + tests) and a `reviewer` agent (verifies builds and quality). Process all tasks to completion automatically.
+### Step 2 — Pick a task
 
-### Step 1: Input & Context
+Parse `$1` for the **first** line matching `- [ ]`. Store the exact line text for the Step 6 update.
 
-1. Read the phase file (`$1`) — contains the task list
-2. Read `docs/idea.md` — project description
-3. Read `docs/vision.md` — architecture and phase ordering
-4. Read `docs/conventions.md` — coding rules reference
+If no unchecked task exists: print `All tasks in $1 are complete.` and **return to caller**.
 
-### Step 2: Task Extraction
+### Step 3 — Announce
 
-1. Parse the phase file for lines matching `- [ ]` (unchecked tasks)
-2. If no unchecked tasks exist: Report "All tasks in `$1` are complete." and return
-3. Pick the **first** unchecked task. Store its exact line text for later update
+In 1-2 sentences: task description and likely files affected. Then proceed.
 
-### Step 3: Announce
-
-Briefly announce:
-- Task description (1-2 sentences)
-- Likely files affected
-
-Then proceed immediately to implementation.
-
-### Step 4: Code Implementation
-
-Invoke the `coder` subagent via Task tool:
+### Step 4 — Implement
 
 ```
-Task(
-  subagent_type: "coder",
+Agent(
+  subagent_type: "general-purpose",
   model: "opus",
-  prompt: "Implement the following task:
-    <task description>
+  description: "Implement <brief task name>",
+  prompt: "Implement the following task and write its tests in the same pass:
+           <task description>
 
-    Context:
-    <summary from idea.md and vision.md>
+           Context: <2-3 sentence summary from idea.md and vision.md>
+           Project rules: read docs/conventions.md and CLAUDE.md.
+           Apply '.claude/skills/_shared/requirements-immutability.md'.
+           Likely files: <list>.
 
-    Read docs/conventions.md for coding rules.
-    Relevant source files: <list of likely files>
-
-    CRITICAL: Implement according to the requirements. If existing code contradicts requirements, modify the code to match. Do NOT modify requirements documents.",
-  description: "Implement <brief task name>"
+           Output: list every file you created or modified, separated by newlines."
 )
 ```
 
-### Step 5: Review
+Wait for result. Keep the file list for Step 5.
 
-Invoke the `reviewer` subagent via Task tool:
+### Step 5 — Review
 
 ```
-Task(
-  subagent_type: "reviewer",
-  model: "sonnet",
-  prompt: "Review and verify the following task implementation:
-    <task description>
+Agent(
+  subagent_type: "general-purpose",
+  model: "opus",
+  description: "Review <brief task name>",
+  prompt: "Review the implementation just produced for task: <task description>.
+           Files modified by coder: <list from Step 4>.
 
-    Files modified by coder: <list from coder output>
+           Run verification:
+             cargo fmt --check
+             cargo check
+             cargo test
+             cargo clippy --tests -- -D warnings
+           Then assess code quality against docs/conventions.md.
 
-    Read docs/conventions.md for the conventions checklist.
-    Run build verification and code quality review.
-    Report PASS, FAIL_BUILD, or FAIL_REVIEW.",
-  description: "Review <brief task name>"
+           Report exactly one of these statuses on the LAST line of your output:
+             PASS              — verification clean and quality acceptable
+             FAIL_BUILD        — verification failed (fmt, check, test, or clippy)
+             FAIL_REVIEW       — verification clean but quality issues need fixing"
 )
 ```
 
-**Branch on result:**
-- `PASS` → go to Step 7
-- `FAIL_BUILD` → go to Step 6 (build refinement)
-- `FAIL_REVIEW` → go to Step 6 (review refinement)
+Branch on the last-line status:
 
-### Step 6: Refinement Loop
+- `PASS` → **Step 6**.
+- `FAIL_BUILD` → **Step 5a (build refinement)**.
+- `FAIL_REVIEW` → **Step 5b (review refinement)**.
 
-**Build failures** (max 3 iterations):
-1. Re-invoke `coder` with exact error output and instruction to fix
-2. Re-invoke `reviewer` after fix
-3. If 3 build-fix iterations exhausted → report failure, use AskUserQuestion:
-   - Question: "Build refinement failed after 3 attempts. How should we proceed?"
-   - Options:
-     1. "Skip this task" — move to next task
-     2. "Stop entirely" — terminate skill
+### Step 5a — Build refinement (max 3 iterations)
 
-**Review failures** (max 2 iterations, only after build passes):
-1. Re-invoke `coder` with review feedback (specific file:line references and fix instructions)
-2. Re-invoke `reviewer` after fix
-3. If 2 review-fix iterations exhausted → report remaining review issues as warnings, treat as soft pass, proceed to Step 7
+1. Re-invoke the coder (Step 4 form) with the exact error output and instruction to fix only those errors.
+2. Re-invoke the reviewer (Step 5 form).
+3. If three build-fix iterations exhaust without `PASS`:
+   - `AskUserQuestion`:
+     - question: `Build refinement failed after 3 attempts. How should we proceed?`
+     - options: `Skip this task` (move to next) / `Stop entirely` (terminate skill).
 
-### Step 7: Completion
+### Step 5b — Review refinement (max 3 iterations)
 
-1. **Update phase file**: Use Edit tool to change `- [ ]` to `- [x]` for the completed task's exact line
-2. **Show summary**:
-   - Files modified/created
-   - Tests added
-   - Verification results
-3. **Check for remaining tasks**:
-   - If more `- [ ]` tasks remain → return to Step 2 with next task
-   - If all complete → report "All tasks in `$1` are complete." and return
+1. Re-invoke the coder with the reviewer's specific file:line feedback and fix instructions.
+2. Re-invoke the reviewer.
+3. If three review-fix iterations exhaust without `PASS`: report remaining issues as warnings, treat as soft pass, **proceed to Step 6**.
 
----
+> Iteration count is **3 for both build and review refinement** — matches `implement-orchestrated`. Earlier versions had a 2/3 split; the asymmetry caused confusion and one extra build attempt rarely changed the outcome.
+
+### Step 6 — Completion
+
+1. Use `Edit` to flip the stored task line from `- [ ]` to `- [x]` in `$1`.
+2. Print a one-block summary: files modified, tests added, verification results.
+3. **Check for more `- [ ]` tasks in `$1`:**
+   - If any remain → return to **Step 2** with the next task.
+   - If none remain → print `All tasks in $1 are complete.` and **return to caller**.
 
 ## Error Handling
 
 | Situation | Action |
-|-----------|--------|
-| Coder reports ambiguity | Use AskUserQuestion for clarification |
-| Build refinement stuck (3 iterations) | Report failure, ask user whether to continue or stop |
-| Review refinement exhausted (2 iterations) | Warn and continue (soft pass) |
-| Coder or reviewer agent fails | Report error, use AskUserQuestion to ask how to proceed |
-
----
+|---|---|
+| Coder reports ambiguity | `AskUserQuestion` for clarification. |
+| Build refinement exhausted (3 iterations) | `AskUserQuestion`: skip task or stop. |
+| Review refinement exhausted (3 iterations) | Soft pass with warnings, continue. |
+| Coder or reviewer subagent fails | Report error, `AskUserQuestion` to ask how to proceed. |
 
 ## Notes
 
-- All tasks are processed automatically without confirmation prompts
-- Commits are handled separately, not by this orchestrator
-- When all tasks are complete, return to caller without asking
-- The coder writes both production code AND tests (unlike implement-orchestrated)
+- Tasks are processed automatically without confirmation prompts.
+- Commits are owned by the caller (typically `phase-loop`), not this skill.
+- The coder writes both production code AND tests (this is the difference from `implement-orchestrated`, which separates them).

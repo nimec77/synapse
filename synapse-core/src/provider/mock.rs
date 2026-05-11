@@ -137,6 +137,66 @@ impl MockProvider {
         self
     }
 
+    /// Add a tool-call response that also carries `reasoning_content`.
+    ///
+    /// Useful for testing the agent loop with reasoning models that produce both
+    /// a tool call and chain-of-thought reasoning in the same turn.
+    #[must_use]
+    pub fn with_tool_call_with_reasoning(
+        self,
+        tool_calls: Vec<ToolCallData>,
+        reasoning: impl Into<String>,
+    ) -> Self {
+        let mut msg = Message::new(Role::Assistant, "").with_reasoning(reasoning);
+        msg.tool_calls = Some(tool_calls);
+        match self.responses.lock() {
+            Ok(mut responses) => {
+                responses.push(msg);
+            }
+            Err(poisoned) => {
+                let mut responses = poisoned.into_inner();
+                responses.push(msg);
+            }
+        }
+        self
+    }
+
+    /// Add a response that carries `reasoning_content` alongside the regular content.
+    ///
+    /// Used for testing reasoning model behavior in agent integration tests. The returned
+    /// message has `Role::Assistant`, `content = content`, and
+    /// `reasoning_content = Some(reasoning)`. Existing tests using [`with_response`] are
+    /// unaffected.
+    ///
+    /// [`with_response`]: Self::with_response
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use synapse_core::provider::MockProvider;
+    ///
+    /// let provider = MockProvider::new()
+    ///     .with_reasoning_response("Final answer", "My chain of thought");
+    /// ```
+    #[must_use]
+    pub fn with_reasoning_response(
+        self,
+        content: impl Into<String>,
+        reasoning: impl Into<String>,
+    ) -> Self {
+        let msg = Message::new(Role::Assistant, content).with_reasoning(reasoning);
+        match self.responses.lock() {
+            Ok(mut responses) => {
+                responses.push(msg);
+            }
+            Err(poisoned) => {
+                let mut responses = poisoned.into_inner();
+                responses.push(msg);
+            }
+        }
+        self
+    }
+
     /// Configure tokens to yield when streaming.
     ///
     /// When streaming is called, each token is yielded as a `TextDelta`

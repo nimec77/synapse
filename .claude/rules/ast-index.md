@@ -1,47 +1,96 @@
-# /Applications/ast-index Rules
+# ast-index rules (Rust / telegram-connector)
 
-## Mandatory Search Rules
+Use `ast-index` as the primary code-search tool in this repo. Prefer it over `grep`/`Grep` and over bulk `Read` of large files.
 
-1. **ALWAYS use /Applications/ast-index FIRST** for any code search task
-2. **NEVER duplicate results** — if /Applications/ast-index found usages/implementations, that IS the complete answer
-3. **DO NOT run grep "for completeness"** after /Applications/ast-index returns results
-4. **Use grep/Search ONLY when:**
-   - /Applications/ast-index returns empty results
-   - Searching for regex patterns (/Applications/ast-index uses literal match)
-   - Searching for string literals inside code (`"some text"`)
-   - Searching in comments content
+## Keep the index up to date
 
-## Why /Applications/ast-index
+After pulling fresh `master` or rebasing, run `ast-index update` — it reindexes only changed files (seconds).
+If `ast-index search` returns empty for a symbol you know exists, run `ast-index update` and retry before falling back.
 
-/Applications/ast-index is 17-69x faster than grep (1-10ms vs 200ms-3s) and returns structured, accurate results.
+## Mandatory search rules
 
-## Command Reference
+1. **ALWAYS use `ast-index` FIRST** for any code-search task.
+2. **NEVER duplicate results** — if `ast-index` returned hits, that IS the answer. Do not re-run `grep` to "double-check".
+3. Use `Grep` **only when** `ast-index` returned empty, or for regex / string-literal patterns that are not symbol names (e.g. searching log messages, TOML keys, TODO text fragments, strings inside `#[tool(description = "...")]`).
 
-| Task | Command | Time |
-|------|---------|------|
-| Universal search | `/Applications/ast-index search "query"` | ~10ms |
-| Find struct/trait | `/Applications/ast-index class "StructName"` | ~1ms |
-| Find symbol | `/Applications/ast-index symbol "SymbolName"` | ~1ms |
-| Find usages | `/Applications/ast-index usages "SymbolName"` | ~8ms |
-| Find implementations | `/Applications/ast-index implementations "Trait"` | ~5ms |
-| Call hierarchy | `/Applications/ast-index call-tree "function" --depth 3` | ~1s |
-| Find callers | `/Applications/ast-index callers "functionName"` | ~1s |
-| Module deps | `/Applications/ast-index deps "module-name"` | ~10ms |
-| File outline | `/Applications/ast-index outline "lib.rs"` | ~1ms |
+## Mandatory read rules
 
-## Rust-Specific Commands
+1. **Before `Read`-ing any file over 500 lines, run `ast-index outline <file>` first.**
+   - `src/mcp/server.rs` (all 8 MCP tools), `src/telegram/client.rs`, `src/config.rs`, and most files under `src/mcp/tests/` are in this range.
+2. Use the outline to locate the specific symbol / line range, then `Read` that slice via `offset` / `limit`.
+3. Never bulk-read large files without an outline — it wastes context.
 
-| Task | Command |
-|------|---------|
-| Find structs | `/Applications/ast-index class "User"` |
-| Find traits | `/Applications/ast-index class "Repository"` |
-| Find impl blocks | `/Applications/ast-index search "impl"` |
-| Find macros | `/Applications/ast-index search "macro_rules"` |
-| Find derives | `/Applications/ast-index search "#[derive"` |
-| Find tests | `/Applications/ast-index search "#[test]"` |
+## Rules for subagents
 
-## Index Management
+When you spawn a subagent for code search (Agent / Task / Explore), it does **not** inherit this file. Include the block below verbatim in the subagent prompt:
 
-- `/Applications/ast-index rebuild` — Full reindex (run once after clone)
-- `/Applications/ast-index update` — After git pull/merge
-- `/Applications/ast-index stats` — Show index statistics
+```
+Use `ast-index` via Bash for code search (NOT grep / the Grep tool):
+  ast-index search "query"           — universal search
+  ast-index file "Name"              — find a file by name fragment
+  ast-index symbol "Name"            — find a symbol definition
+  ast-index class "Name"             — find a struct / enum / trait
+  ast-index usages "Name"            — every usage of a symbol
+  ast-index callers "func"           — functions that call this one
+  ast-index implementations "Trait"  — concrete implementors of a trait
+  ast-index refs "Name"              — cross-references (defs + imports + usages)
+Use Grep ONLY if ast-index returned empty, or for string literals / regex.
+
+Before Read-ing any file over 500 lines, FIRST run
+  ast-index outline <file>
+to get its structure, then Read only the targeted slice via offset/limit.
+Never bulk-read large files.
+```
+
+## Command cheat sheet
+
+Grouped by intent. Full list and flags: `ast-index --help`.
+
+- **Search:** `search`, `file`, `symbol`, `class`
+- **Usages & flow:** `usages`, `callers`, `call-tree`, `refs`
+- **Hierarchy / traits:** `implementations`, `hierarchy`
+- **Modules / deps:** `module`, `deps`, `dependents`, `api`, `unused-deps`
+- **Files:** `outline`, `imports`, `changed`
+- **Quality:** `todo`, `deprecated`, `unused-symbols`
+- **Index mgmt:** `rebuild`, `update`, `stats`
+
+## Common use cases (concrete to this repo)
+
+- `ast-index implementations "TelegramClientTrait"` — concrete impls (production `TelegramClient` + mockall-generated `MockTelegramClientTrait`).
+- `ast-index implementations "RateLimiterTrait"` — same pattern for the rate limiter.
+- `ast-index usages "ChannelId"` — every place the newtype flows (constructors, MCP tool params, JSON schemas, tests).
+- `ast-index callers "resolve_channel"` — who calls a `TelegramClient` method, without the noise of definition lines.
+- `ast-index call-tree "search_messages" -d 3` — transitive caller tree from a Telegram client method up to the MCP tool entry point.
+- `ast-index symbol "McpServer"` — locate the generic `McpServer<T, R>` struct and its `#[tool_router]` impl block.
+- `ast-index outline src/mcp/server.rs` — see all 8 MCP tools (each marked with `#[tool(...)]`) before reading.
+- `ast-index outline src/config.rs` — config layout before tweaking parsing/validation.
+- `ast-index changed` — symbols modified on the current branch vs `master`. Useful for PR-description summaries.
+- `ast-index todo` — all TODO / FIXME / HACK comments in the repo.
+- `ast-index deprecated` — every use of `#[deprecated]`.
+
+## Scoping searches
+
+Symbol-returning commands accept scope filters — use them to cut noise:
+
+```
+ast-index usages "Config" --in-file src/mcp/server.rs   # only inside one file
+ast-index symbol "Username" --type class                # only struct/enum/trait kinds
+```
+
+## Rust-specific notes
+
+- **Newtypes** (`ChannelId(i64)`, `MessageId(i64)`, `Username(String)`, `ChannelName(String)`, `UserId(i64)`) are indexed as struct symbols — `ast-index class "ChannelId"` and `ast-index usages "ChannelId"` both work.
+- **Traits** — use `ast-index implementations "TraitName"` to find concrete impls. Mock impls generated by `mockall` (e.g. `MockTelegramClientTrait`) show up as a separate implementor.
+- **Proc macros** — `rmcp`'s `#[tool_router]` and `#[tool(...)]` and `schemars`'s `#[derive(JsonSchema)]` expand at compile time. `ast-index` does **not** expand macros; if you're searching for a generated symbol or for an attribute string (e.g. the `description = "..."` text inside a `#[tool(...)]` attribute), fall back to `Grep`.
+- **`#[cfg(test)]` blocks and `#[path = "..."]`-included test modules** (`src/config/tests.rs`, `src/mcp/tests/*.rs`, `src/telegram/tests/*.rs`) are indexed as part of their parent module — `ast-index usages` will surface test call sites alongside production ones.
+
+## When `ast-index` returns empty
+
+Legitimate reasons:
+
+- Symbol genuinely doesn't exist.
+- Index is stale — run `ast-index update` and retry.
+- Symbol is generated by a proc macro — fall back to `Grep` or check the macro's `impl` site.
+- You're searching for a string literal (log message, TOML key, error text), not a symbol — use `Grep`.
+
+Do **not** fall back to bulk `Read` of files in these cases.

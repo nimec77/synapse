@@ -13,7 +13,7 @@ pub mod storage;
 pub mod text;
 
 pub use agent::{Agent, AgentError};
-pub use config::{Config, TelegramConfig};
+pub use config::{CliConfig, Config, TelegramConfig};
 pub use mcp::{McpClient, init_mcp_client, load_mcp_config};
 pub use message::{Message, Role};
 pub use provider::{LlmProvider, StreamEvent, create_provider};

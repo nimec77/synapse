@@ -1,86 +1,95 @@
 ---
-description: "Implement a task with separate code and test phases, automated verification, and refinement"
+name: implement-orchestrated
+description: "Use when a task needs separated code and test phases with automated verification and refinement"
 argument-hint: "[ticket-id]"
-allowed-tools: Read, Write, Glob, Grep, Bash, Task, rust-analyzer-lsp, AskUserQuestion
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Agent, rust-analyzer-lsp, AskUserQuestion
 model: sonnet
 ---
 
+You orchestrate two `general-purpose` subagents — one for production code, one for tests — to drive a single tasklist to completion. Subagent invocation pattern: see `../_shared/subagent-registry.md`.
+
 ## Ticket Resolution
 
-If the ticket ID is not provided as a parameter (`$1` is empty):
-1. Read the file `docs/.active_ticket`
-2. Use the first non-empty line as the ticket ID
-3. If the file does not exist or contains no valid ticket ID, display an error message: "Error: No ticket specified. Provide a ticket ID as a parameter or set it in docs/.active_ticket" and terminate immediately.
+If `$1` is empty:
+1. Read `docs/.active_ticket`.
+2. Use the first non-empty line as `TICKET_ID`.
+3. If the file is missing or empty: print `Error: No ticket specified. Provide a ticket ID as a parameter or set it in docs/.active_ticket` and stop.
 
----
+Otherwise `TICKET_ID = $1`.
 
-## CRITICAL: REQUIREMENTS ARE IMMUTABLE
+## Argument Flags
 
-**Agents MUST implement code according to the requirements in the PRD and plan.**
+- `--auto` — process all unchecked tasks without pausing between them. Default when invoked from `dev-cycle` or `feature-development`. When absent, the orchestrator still processes all tasks but prints an explicit per-task announcement before each.
 
-The code-writer and test-writer agents are NOT permitted to:
-- ❌ Modify requirements documents (PRD, plan, phase docs)
-- ❌ Skip implementing a requirement because existing code "works differently"
-- ❌ Justify deviations from requirements
-- ❌ Mark tasks complete when implementation doesn't match requirements
+## Requirements
 
-The agents MUST:
-- ✅ Implement exactly what the task acceptance criteria specify
-- ✅ Modify existing code if it doesn't match requirements
-- ✅ Report deviations that cannot be fixed (use AskUserQuestion for guidance)
-- ✅ Ensure tests verify the requirements, not just existing behavior
+Apply the requirements-immutability rules — see `../_shared/requirements-immutability.md`. Both subagents must implement what the PRD/plan specifies; if existing code contradicts the spec, the code changes, not the requirements.
 
-**When invoking agents, explicitly remind them:**
-> "Implement according to the requirements. If existing code contradicts requirements, modify the code to match requirements."
+## Workflow
 
----
+### Step 1 — Setup
 
-## Orchestrator Workflow
-
-You are an orchestrator that coordinates code-writer and test-writer agents to implement tasks safely and systematically. Process all tasks to completion automatically, showing progress as you go.
-
-### Step 1: Setup
-
-1. Read `docs/tasklist/$1.md` and find the first task marked with `- [ ]`
-   - **If no unchecked tasks exist**: Report "All tasks in `docs/tasklist/$1.md` are already complete." and **return to caller**
-   - **Store the exact task line text** (e.g., `- [ ] 1.1 Create workspace Cargo.toml`) for later update
-2. Read `docs/prd/$1.prd.md` for requirements context
-3. Read `docs/plan/$1.md` for implementation details
-4. Create a git savepoint:
+1. Read `docs/tasklist/TICKET_ID.md`. Find the first task line matching `- [ ]`.
+   - If none, print `All tasks in docs/tasklist/TICKET_ID.md are already complete.` and **return to caller**.
+   - Store the **exact** task line text (e.g. `- [ ] 1.1 Create workspace Cargo.toml`) for the Step 7 update.
+2. Read `docs/prd/TICKET_ID.prd.md` and `docs/plan/TICKET_ID.md` for context.
+3. Create a savepoint:
    ```bash
-   git stash push -m "pre-implement-$1-$(date +%s)" --include-untracked
+   git stash push -m "pre-implement-TICKET_ID-$(date +%s)" --include-untracked
    ```
-   (If working tree is clean, skip stash but note the current HEAD for rollback)
+   If the working tree is clean, skip stash and record `git rev-parse HEAD` for rollback.
 
-### Step 2: Plan Announcement
+**Proceed to Step 2.**
 
-**Briefly announce** what will be implemented:
-- Task description (1-2 sentences)
-- Files that will be created or modified
+### Step 2 — Announce
 
-Then proceed immediately to implementation.
+Briefly say (1-2 sentences) what the task is and which files are likely to change. Then proceed immediately.
 
-### Step 3: Code Implementation
+**Proceed to Step 3.**
 
-Invoke the `code-writer` agent with:
-- Task description
-- Relevant file paths
-- Instructions to implement production code only
+### Step 3 — Code implementation
 
-Wait for code-writer to complete and report results.
+```
+Agent(
+  subagent_type: "general-purpose",
+  model: "opus",
+  description: "Implement <brief task name>",
+  prompt: "Implement task: <task description>.
+           Files likely to change: <list>.
+           Read docs/conventions.md and CLAUDE.md for project rules.
+           Read docs/prd/TICKET_ID.prd.md and docs/plan/TICKET_ID.md for requirements.
+           Apply '.claude/skills/_shared/requirements-immutability.md'.
+           Write production code only — tests come in the next step."
+)
+```
 
-### Step 4: Test Implementation
+Wait for the result.
 
-**Always write tests.** Invoke the `test-writer` agent with:
-- Task description
-- List of files modified by code-writer
-- Instructions to write tests for the new code
+**Proceed to Step 4.**
 
-Wait for test-writer to complete and report results.
+### Step 4 — Test implementation
 
-### Step 5: Verification
+```
+Agent(
+  subagent_type: "general-purpose",
+  model: "sonnet",
+  description: "Test <brief task name>",
+  prompt: "Write tests for the implementation just produced for task: <task description>.
+           Files modified by code phase: <list from Step 3 result>.
+           Read docs/conventions.md for test placement rules.
+           Tests must verify the requirements from docs/prd/TICKET_ID.prd.md, not just current behavior.
+           Apply '.claude/skills/_shared/requirements-immutability.md'."
+)
+```
 
-Run verification commands in sequence:
+Wait for the result.
+
+**Proceed to Step 5.**
+
+### Step 5 — Verification
+
+Run in sequence:
+
 ```bash
 cargo fmt
 cargo check
@@ -88,123 +97,66 @@ cargo test
 cargo clippy --tests -- -D warnings
 ```
 
-Collect results for all commands.
+Collect every command's exit status. If all pass, **proceed to Step 6 (security audit)**. If any fail, **proceed to Step 7 (refinement)**.
 
-### Step 5.1: Security Audit
+### Step 6 — Security audit
 
-After all verification commands pass, run:
+If the project uses Cargo (it does, in synapse):
+
 ```bash
 cargo audit
 ```
 
-**If `cargo audit` fails:**
-- Do NOT enter the refinement loop (security issues cannot be auto-fixed)
-- Use AskUserQuestion to present options:
-  - Question: "Security vulnerability detected in dependencies. How should we proceed?"
-  - Header: "Security"
-  - Options:
-    1. "Ignore advisory" - Add to `.cargo/audit.toml` and continue
-    2. "Stop and review" - Halt implementation for manual review
-- If user chooses "Ignore advisory": Add the RUSTSEC ID to `.cargo/audit.toml` with a comment explaining why, then continue
-- If user chooses "Stop and review": Terminate with message about manual intervention required
+If `cargo audit` fails:
+- Do NOT enter the refinement loop — security advisories are not auto-fixable.
+- Invoke `AskUserQuestion`:
+  - question: `Security vulnerability detected in dependencies. How should we proceed?`
+  - header: `Security`
+  - options:
+    1. `Ignore advisory` — append the RUSTSEC ID to `.cargo/audit.toml` with a justification comment, then continue to Step 8.
+    2. `Stop and review` — terminate with a message that manual intervention is required.
 
-### Step 6: Refinement (if verification failed)
+If `cargo audit` passes, **proceed to Step 8**.
 
-If any verification step failed:
+### Step 7 — Refinement loop
 
-1. **Parse the errors** to determine blame:
-   - Compilation error in `src/` → code-writer issue
-   - Compilation error in `#[cfg(test)]` or `tests/` → test-writer issue
-   - Test assertion failed → likely code-writer issue (code doesn't match spec)
-   - Clippy warning → whoever wrote that code
+If any verification step in Step 5 failed:
 
-2. **Track iteration count** (max 3 refinements)
-
-3. **Check for progress**:
-   - Compare current errors to previous iteration
-   - If identical errors for 2 iterations → stuck, escalate
-
-4. **Re-invoke the responsible agent** with:
-   - The specific error messages
-   - Instructions to fix only their code
-   - Reminder of what was originally intended
-
-5. **Re-run verification** (return to Step 5)
-
-6. **If max iterations reached or stuck**:
+1. **Blame analysis:**
+   - Compilation error in `src/` (non-test) → code phase issue.
+   - Compilation error in `#[cfg(test)]` blocks or `*/tests.rs` → test phase issue.
+   - Failing assertion → most likely code phase (code doesn't match spec).
+   - Clippy warning → whoever owns the file the warning points at.
+2. Track `iteration` (max 3 total refinements per task).
+3. **Stuck check:** if the same errors appear two iterations in a row, treat as stuck.
+4. Re-invoke the responsible subagent (use the Step 3 or Step 4 invocation form, but quote the exact errors and instruct: "fix only the errors above, don't add unrelated changes").
+5. Return to **Step 5**.
+6. **If max iterations reached or stuck:**
    ```bash
-   git stash pop  # or git restore . if no stash
+   git stash pop  # or git restore . && git checkout <recorded HEAD>
    ```
-   Report: "Refinement failed after 3 attempts. Changes have been rolled back. Manual intervention required."
-   Show the last error messages and return to caller with failure status.
+   Print `Refinement failed after 3 attempts. Changes have been rolled back. Manual intervention required.` and return to caller with a failure status.
 
-### Step 7: Completion
+### Step 8 — Completion
 
-If verification passed:
-
-1. **Update the tasklist** in `docs/tasklist/$1.md`:
-   - Use the Edit tool to replace the stored task line from Step 1
-   - Change `- [ ]` to `- [x]` for that specific task
-   - Example: `- [ ] 1.1 Create workspace` → `- [x] 1.1 Create workspace`
-
-2. Show summary:
-   - Files modified/created
-   - Tests added
-   - Verification results
-   - Tasklist update confirmation
-
-3. **Check for remaining tasks** in `docs/tasklist/$1.md`:
-   - If there are more unchecked tasks (`- [ ]`): Return to Step 1 immediately with the next task
-   - If **all tasks are complete** (no `- [ ]` remaining):
-     - Update tasklist status to `IMPLEMENT_STEP_OK`
-     - Report: "All tasks in `docs/tasklist/$1.md` are complete."
-     - **Return to caller** — do not ask about other files or next steps. The parent command will handle subsequent gates.
-
----
-
-## Notes
-
-- Tests are always written automatically after code implementation.
-- Commits are handled separately, not by this orchestrator.
-- When all tasks are complete, return to caller without asking — the parent command controls subsequent workflow gates.
-- All tasks are processed automatically without confirmation prompts.
-
----
+1. Use `Edit` to flip the stored task line in `docs/tasklist/TICKET_ID.md` from `- [ ]` to `- [x]`.
+2. Print a one-block summary: files modified, tests added, verification results, tasklist update confirmed.
+3. **Check for more `- [ ]` tasks in the tasklist:**
+   - If any remain → return to **Step 1** with the next task.
+   - If none remain → set `Status: IMPLEMENT_STEP_OK` in `docs/tasklist/TICKET_ID.md`, print `All tasks in docs/tasklist/TICKET_ID.md are complete.`, and **return to caller**. Do not invoke review or QA — the parent orchestrator owns those gates.
 
 ## Error Handling
 
 | Situation | Action |
-|-----------|--------|
-| code-writer reports ambiguity | Stop, use AskUserQuestion for clarification |
-| test-writer finds production bug | Report to user, use AskUserQuestion to ask how to proceed |
-| Refinement stuck (same errors) | Rollback, escalate to user |
-| Max refinements reached | Rollback, show errors, terminate |
-| Git stash/restore fails | Report error, ask user to resolve manually |
+|---|---|
+| Code subagent reports ambiguity | Stop, invoke `AskUserQuestion` for clarification before re-invoking. |
+| Test subagent finds a production bug | Report to user via `AskUserQuestion`: fix in this task, or open a follow-up? |
+| Refinement stuck (same errors twice) | Roll back, escalate to user. |
+| Max refinements (3) reached | Roll back, show errors, terminate. |
+| Git stash/restore fails | Print error, ask user to resolve manually. |
 
----
+## Notes
 
-## Agent Invocation
-
-Use the Task tool to invoke agents. **Always include the requirements reminder.**
-
-```
-Task(
-  subagent_type: "code-writer",
-  model: "opus",
-  prompt: "Implement [task description]. Files: [list]. Follow docs/conventions.md.
-
-  CRITICAL: Implement according to the requirements in the PRD and plan. If existing code contradicts requirements, modify the code to match requirements. Do NOT modify requirements documents. Do NOT skip requirements because existing code 'works differently'.",
-  description: "Implement [brief task name]"
-)
-```
-
-```
-Task(
-  subagent_type: "test-writer",
-  model: "sonnet",
-  prompt: "Write tests for [description]. Test files: [list]. Follow docs/conventions.md.
-
-  CRITICAL: Tests must verify the requirements from the PRD/plan, not just existing behavior. If existing code doesn't match requirements, the tests should expect the REQUIRED behavior, not the current behavior.",
-  description: "Write tests for [brief task name]"
-)
-```
+- Tests are always written after code — never skipped.
+- Commits are owned by the parent orchestrator, not this skill.
+- Status markers (`IMPLEMENT_STEP_OK`, etc.) are listed in `../_shared/status-markers.md`.

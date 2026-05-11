@@ -1,0 +1,77 @@
+# Synapse configuration example.
+# Copy to ~/.config/synapse/config.toml and edit as needed.
+# Run: chmod 600 ~/.config/synapse/config.toml
+
+# LLM provider: deepseek | anthropic | openai
+provider = "deepseek"
+
+# API key for the selected provider.
+# Prefer the environment variable equivalents (see README) over storing keys here.
+# api_key = "your-api-key-here"
+
+# Model identifier.
+# DeepSeek:  deepseek-chat              (standard chat model)
+#            deepseek-v4-pro            (reasoning/thinking model)
+# Anthropic: claude-sonnet-4-6
+#            claude-opus-4-6
+# OpenAI:    gpt-4o
+#            o3-mini
+model = "deepseek-chat"
+
+# Maximum tokens for LLM responses (default: 4096).
+# Increase to 8192+ when using reasoning_effort = "max" with deepseek-v4-pro.
+max_tokens = 4096
+
+# System prompt prepended to every conversation (never stored in the database).
+# system_prompt = "You are a helpful programming assistant."
+
+# Load system prompt from a file. Inline system_prompt takes priority if both set.
+# system_prompt_file = "prompts/system.md"
+
+# --- DeepSeek V4 Pro reasoning model (SY-22) ---
+#
+# Reasoning effort level. Only applied when provider = "deepseek" and model is
+# reasoning-capable (e.g. deepseek-v4-pro). Ignored for all other providers.
+# Values: "low" | "medium" | "high" (default) | "max"
+#
+# Auto-escalation: when [mcp] is configured and this field is unset, Synapse
+# automatically uses "max" for complex agent flows.
+#
+# reasoning_effort = "high"
+
+[session]
+# SQLite database path. Also overridable via DATABASE_URL env var.
+# database_url = "sqlite:~/.config/synapse/sessions.db"
+max_sessions = 100       # oldest sessions deleted when limit exceeded; 0 = unlimited
+retention_days = 90      # delete sessions older than N days; 0 = keep forever
+auto_cleanup = true      # run cleanup on startup
+
+[mcp]
+# Path to the MCP servers JSON config file. Also overridable via SYNAPSE_MCP_CONFIG env var.
+# config_path = "~/.config/synapse/mcp_servers.json"
+
+# --- CLI display preferences ---
+[cli]
+# Show reasoning content in the REPL (dim/italic above the answer) and on stderr in
+# one-shot mode. Default: true (CLI is developer-facing; reasoning helps debugging).
+# show_reasoning = true
+
+[telegram]
+# Bot token. Strongly prefer TELEGRAM_BOT_TOKEN env var over storing here.
+# token = "123456:ABC-DEF..."
+
+# Telegram user IDs allowed to use the bot. Empty list rejects all users (secure default).
+# allowed_users = [123456789, 987654321]
+
+# Maximum sessions allowed per chat before the oldest is evicted on /new.
+max_sessions_per_chat = 10
+
+# Show reasoning content as a <blockquote> above the answer in Telegram replies.
+# Default: false (privacy — Telegram messages can be screenshotted / forwarded).
+# show_reasoning = false
+
+[logging]
+# File logging for synapse-telegram. Omit this entire section for stdout-only output.
+directory = "logs"      # relative or absolute path
+max_files = 7           # number of rotated files to keep
+rotation = "daily"      # "daily" | "hourly" | "never"

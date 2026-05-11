@@ -85,12 +85,17 @@ pub async fn run_repl(
 
     // Initialize app state
     let mut app = ReplApp::new(session.id, &config.provider, &config.model);
+    // Apply show_reasoning from config (default true when [cli] section is absent)
+    app.show_reasoning = config.cli.as_ref().is_none_or(|c| c.show_reasoning);
 
-    // Populate display messages from history (for session resume)
+    // Populate display messages from history (for session resume).
+    // reasoning_content is preserved so session-resumed conversations honour
+    // the DeepSeek tool-call history rule when building conv_messages.
     for msg in &history {
         app.messages.push(DisplayMessage {
             role: msg.role,
             content: msg.content.clone(),
+            reasoning_content: msg.reasoning_content.clone(),
         });
     }
 
@@ -108,6 +113,8 @@ pub async fn run_repl(
 
     // Accumulated response content for storage
     let mut response_content = String::new();
+    // Accumulated reasoning content for storage (persisted regardless of show_reasoning flag)
+    let mut reasoning_content = String::new();
 
     // Compute initial history height for page scroll
     let initial_area = terminal.get_frame().area();
@@ -142,6 +149,7 @@ pub async fn run_repl(
                                 app.messages.push(DisplayMessage {
                                     role: Role::User,
                                     content: input.clone(),
+                                    reasoning_content: None,
                                 });
 
                                 // Store user message
@@ -160,10 +168,18 @@ pub async fn run_repl(
                                 // Build full conversation for agent from app.messages,
                                 // which already contains history (populated during session
                                 // resume) plus any new messages from this REPL session.
+                                // reasoning_content is carried through to honour the
+                                // DeepSeek tool-call history rule on session resume.
                                 let conv_messages: Vec<Message> = app
                                     .messages
                                     .iter()
-                                    .map(|m| Message::new(m.role, &m.content))
+                                    .map(|m| {
+                                        let mut msg = Message::new(m.role, &m.content);
+                                        if let Some(ref r) = m.reasoning_content {
+                                            msg = msg.with_reasoning(r.clone());
+                                        }
+                                        msg
+                                    })
                                     .collect();
 
                                 // Start streaming via agent (stream_owned takes ownership
@@ -171,6 +187,7 @@ pub async fn run_repl(
                                 app.is_streaming = true;
                                 app.auto_scroll = true;
                                 response_content.clear();
+                                reasoning_content.clear();
                                 agent_stream = Some(agent.stream_owned(conv_messages));
                             }
                         }
@@ -200,23 +217,44 @@ pub async fn run_repl(
                         response_content.push_str(&text);
                         app.append_stream_delta(&text);
                     }
+                    Some(Ok(StreamEvent::ReasoningDelta(reasoning))) => {
+                        // Accumulate reasoning for storage (always).
+                        reasoning_content.push_str(&reasoning);
+                    }
                     Some(Ok(StreamEvent::Done)) | None => {
                         app.is_streaming = false;
                         agent_stream = None;
 
-                        // Store assistant response
+                        // Attach accumulated reasoning to the last assistant DisplayMessage
+                        // so build_history_lines can render it when show_reasoning is true.
+                        if !reasoning_content.is_empty()
+                            && let Some(last) = app.messages.last_mut()
+                            && last.role == Role::Assistant
+                        {
+                            last.reasoning_content = Some(reasoning_content.clone());
+                        }
+
+                        // Store assistant response — always include reasoning_content so
+                        // multi-turn tool conversations honour the DeepSeek history rule.
                         if !response_content.is_empty() {
-                            let assistant_msg = StoredMessage::new(
+                            let mut assistant_msg = StoredMessage::new(
                                 session.id,
                                 Role::Assistant,
                                 &response_content,
                             );
+                            if !reasoning_content.is_empty() {
+                                assistant_msg = assistant_msg
+                                    .with_reasoning(reasoning_content.clone());
+                            }
                             if let Err(e) = storage.add_message(&assistant_msg).await {
                                 app.status_message = Some(
                                     format!("Storage error: {}", e),
                                 );
                             }
                         }
+
+                        // Reset accumulators for next turn
+                        reasoning_content.clear();
 
                         // Touch session
                         let _ = storage.touch_session(session.id).await;
@@ -227,6 +265,9 @@ pub async fn run_repl(
                         app.is_streaming = false;
                         agent_stream = None;
                         app.status_message = Some(format!("Agent error: {}", e));
+                    }
+                    Some(Ok(_)) => {
+                        // Unknown future StreamEvent variant — ignore.
                     }
                 }
             }

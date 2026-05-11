@@ -1,93 +1,69 @@
 ---
-description: "Sync phase completion status between tasklist.md and phase-*.md files"
-allowed-tools: Read, Write, Glob, Grep
+name: sync-phases
+description: "Use when phase completion checkboxes in tasklist.md and individual phase-*.md files have drifted out of sync"
+allowed-tools: Read, Write, Edit, Glob, Grep
 model: sonnet
 ---
 
-## Overview
+You synchronize task-completion state between `docs/tasklist.md` (the master view) and the individual `docs/phase/phase-*.md` files (the per-phase source of truth). Phase files win when they disagree with the tasklist.
 
-This command synchronizes phase task completion between `docs/tasklist.md` and individual `docs/phase/phase-*.md` files.
+## Status Vocabulary
+
+The Feature Phases table in `docs/tasklist.md` uses **plain-text** statuses — never emoji. Permitted values: `Complete`, `In Progress`, `Pending`. Progress is `<done>/<total>` (e.g. `3/5`). See `../_shared/status-markers.md` for the full registry.
 
 ## Steps
 
-### Step 1: Read the global tasklist
+### Step 1 — Read the global tasklist
 
-Read `docs/tasklist.md` to understand the current state of all phases.
+Read `docs/tasklist.md`. Locate the **Feature Phases** table.
 
-### Step 2: Find existing phase files
+### Step 2 — Find existing phase files
 
-Use Glob to find all `docs/phase/phase-*.md` files (pattern: `docs/phase/phase-[0-9]*.md`).
+Glob `docs/phase/phase-[0-9]*.md`.
 
-### Step 3: Sync completed phases FROM phase files TO tasklist
+### Step 3 — Sync phase files → tasklist
 
-For each existing `docs/phase/phase-N.md` file:
+For each existing `docs/phase/phase-N.md`:
 
-1. Read the phase file
-2. Check if ALL tasks in that phase are marked complete (`- [x]`)
-3. If the phase is complete in the phase file:
-   - Update the corresponding tasks in `docs/tasklist.md` to `[x]`
-   - Update the Feature Phases table: set status to `✅ Complete` and progress to `X/X`
-4. If the phase is NOT complete but has some progress:
-   - Sync individual task completion status to `docs/tasklist.md`
-   - Update progress count in Feature Phases table (e.g., `2/4`)
+1. Read it; count `[x]` and `[ ]` tasks.
+2. **If all `[x]`:**
+   - In `docs/tasklist.md`, set the row's status to `Complete` and progress to `<total>/<total>`.
+   - Sync each task checkbox in the per-phase section of `docs/tasklist.md` to `[x]`.
+3. **If partially complete:**
+   - Set status to `In Progress` and progress to `<done>/<total>`.
+   - Sync each task checkbox in `docs/tasklist.md` to mirror the phase file.
 
-### Step 4: Find the first incomplete phase
+### Step 4 — Find the first incomplete phase
 
-Scan `docs/tasklist.md` for the first phase where:
-- Status is NOT `✅ Complete` in the Feature Phases table, OR
-- Any task is marked `[ ]` (incomplete)
+Scan the Feature Phases table top-to-bottom. The **first** row whose status is not `Complete` is `CURRENT_PHASE`.
 
-### Step 5: Extract incomplete phase to separate file
+If every row is `Complete`, set `CURRENT_PHASE = none` and proceed to Step 7.
 
-If a `docs/phase/phase-N.md` file does NOT exist for the first incomplete phase:
+### Step 5 — Materialize the phase file if missing
 
-1. Extract from `docs/tasklist.md`:
-   - Phase title (from `## Phase N: Title`)
-   - Goal (from `**Goal:**` line)
-   - All tasks for that phase (`- [ ] N.1 ...`, `- [ ] N.2 ...`, etc.)
-   - Test/acceptance criteria (from `**Test:**` line)
+If `docs/phase/phase-CURRENT_PHASE.md` does **not** exist, create it from `docs/tasklist.md` using the layout in `../_shared/phase-file-template.md`. Extract:
 
-2. Create `docs/phase/phase-N.md` with this structure:
-   ```markdown
-   # Phase N: Title
+- Title from the `## Phase N: <title>` heading.
+- Goal from `**Goal:**` (or derive a one-line goal from the phase description if missing).
+- Tasks from the `- [ ] N.x …` lines in that phase's section.
+- Acceptance criteria from `**Test:**` or `**Verify:**` lines.
+- Dependencies from the Feature Phases table's `Depends on` column.
 
-   **Goal:** [extracted goal]
+### Step 6 — Update the Current Phase pointer
 
-   ## Tasks
+Update the `**Current Phase:** <N>` line at the top of `docs/tasklist.md` to `CURRENT_PHASE`.
 
-   - [ ] N.1 [task description]
-   - [ ] N.2 [task description]
-   ...
+### Step 7 — Report
 
-   ## Acceptance Criteria
-
-   **Test:** [extracted test criteria]
-
-   ## Dependencies
-
-   - Phase N-1 complete
-   - [any other dependencies mentioned]
-
-   ## Implementation Notes
-
-   [Extract any implementation notes from tasklist.md for this phase, or leave placeholder]
-   ```
-
-### Step 6: Update Current Phase
-
-Update the `**Current Phase:** N` line in `docs/tasklist.md` to reflect the first incomplete phase number.
-
-### Step 7: Report
-
-Output a summary:
-- Which phases were synced
-- Which phase file was created (if any)
-- Current phase number
-- Next actions needed
+Print:
+- Phases whose tasklist rows were updated.
+- Phase file created (if any).
+- Current phase number (or `all complete`).
+- Next action: which phase to work on next, or "all phases complete".
 
 ## Rules
 
-- Phase files (`docs/phase/phase-N.md`) are the source of truth for task completion within that phase
-- The tasklist.md Feature Phases table must stay in sync with actual task completion
-- Never delete or overwrite existing implementation notes in phase files
-- Preserve all formatting and extra sections in existing files
+- Phase files are the source of truth for task completion within their phase. The tasklist mirrors them.
+- Never delete or overwrite an existing `## Implementation Notes` section in a phase file.
+- Preserve any extra sections an earlier author added (`## Open Questions`, `## Risks`, etc.).
+- Multi-phase drift: if more than one phase is out of sync, this skill processes them in numeric order in a single pass.

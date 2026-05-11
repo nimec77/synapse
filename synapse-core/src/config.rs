@@ -84,6 +84,40 @@ pub struct Config {
     /// File logging configuration (rotation, directory, max files).
     #[serde(default)]
     pub logging: Option<LoggingConfig>,
+
+    /// Reasoning effort level for thinking-capable models (e.g. DeepSeek V4 Pro).
+    ///
+    /// Accepted values (per DeepSeek docs): `"low"`, `"medium"`, `"high"`, `"max"`.
+    /// Only applied when `provider = "deepseek"` and `model` is in `REASONING_MODELS`.
+    /// Ignored for all other providers (a warning is emitted). Defaults to `"high"`
+    /// internally when unset.
+    #[serde(default)]
+    pub reasoning_effort: Option<String>,
+
+    /// CLI-only display preferences.
+    #[serde(default)]
+    pub cli: Option<CliConfig>,
+}
+
+/// CLI display preferences.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct CliConfig {
+    /// Display `reasoning_content` above the final answer in the REPL and on
+    /// stderr in one-shot mode. Default: `true` (CLI is developer-facing).
+    #[serde(default = "default_cli_show_reasoning")]
+    pub show_reasoning: bool,
+}
+
+fn default_cli_show_reasoning() -> bool {
+    true
+}
+
+impl Default for CliConfig {
+    fn default() -> Self {
+        Self {
+            show_reasoning: true,
+        }
+    }
 }
 
 /// Session storage configuration.
@@ -154,10 +188,21 @@ pub struct TelegramConfig {
     /// deleted before the new one is created.
     #[serde(default = "default_max_sessions_per_chat")]
     pub max_sessions_per_chat: u32,
+    /// Prepend reasoning content as `<blockquote>` in outgoing Telegram messages.
+    ///
+    /// Default: `false` (privacy-preserving — Telegram messages can be screenshotted
+    /// or forwarded). Set to `true` to show chain-of-thought in a blockquote above the
+    /// answer. Reasoning is always persisted to SQLite regardless of this flag.
+    #[serde(default = "default_telegram_show_reasoning")]
+    pub show_reasoning: bool,
 }
 
 fn default_max_sessions_per_chat() -> u32 {
     10
+}
+
+fn default_telegram_show_reasoning() -> bool {
+    false
 }
 
 impl Default for TelegramConfig {
@@ -166,6 +211,7 @@ impl Default for TelegramConfig {
             token: None,
             allowed_users: vec![],
             max_sessions_per_chat: default_max_sessions_per_chat(),
+            show_reasoning: false,
         }
     }
 }
@@ -333,6 +379,8 @@ impl Default for Config {
             mcp: None,
             telegram: None,
             logging: None,
+            reasoning_effort: None,
+            cli: None,
         }
     }
 }

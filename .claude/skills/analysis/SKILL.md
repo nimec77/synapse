@@ -1,57 +1,32 @@
 ---
-description: "Initialize feature: create a ticket and draft the PRD"
+name: analysis
+description: "Use when starting work on a new feature ticket and no PRD exists yet"
 argument-hint: "[ticket-id] [description-file]"
 allowed-tools: Read, Write, Glob, Grep
 model: opus
 ---
 
+You produce the initial PRD for a new ticket.
+
 ## Argument Parsing
 
-Parse `$ARGUMENTS` to extract positional arguments:
-- **TICKET_ID**: first whitespace-delimited token from `$ARGUMENTS`
-- **DESCRIPTION_FILE**: second token (file path, strip leading `@` if present) from `$ARGUMENTS`
+Parse `$ARGUMENTS`:
+- **TICKET_ID**: first whitespace-delimited token.
+- **DESCRIPTION_FILE**: second token (file path; strip leading `@` if present).
 
-Use TICKET_ID wherever the ticket identifier is needed below. Do NOT use the raw `$1` value — it may be incorrect due to argument parsing issues.
+Use `TICKET_ID` everywhere below — never the raw `$1`, which can be mis-parsed.
 
----
+## Source-of-Truth Rules
 
-Use the `analyst` subagent.
-
-You are starting the process of working on a feature with the identifier `TICKET_ID`.
-
-## CRITICAL: DESCRIPTION FILES ARE AUTHORITATIVE
-
-**The description file (e.g., `docs/phase/phase-*.md`) contains the authoritative requirements.**
-
-When a description file is provided:
-- Its specifications are the SOURCE OF TRUTH
-- Do NOT modify requirements based on existing code
-- Do NOT contradict the description file
-- Copy technical specifications EXACTLY as written
-
-### Forbidden Actions
-
-- Changing specifications from the description file based on existing code
-- Saying "implementation uses X" to override specified requirement Y
-- Omitting requirements from the description file
-- Reinterpreting technical specifications (e.g., changing "UUID v8" to "UUID v4")
-
-### Required Actions
-
-- Copy all technical specifications from description file verbatim
-- If existing code differs from requirements, note this as a gap to be fixed
-- All requirements from the description file must appear in the PRD
-
----
+The DESCRIPTION_FILE (e.g. `docs/phase/phase-N.md`) is **authoritative**: copy its technical specifications verbatim, never paraphrase. Apply the requirements-immutability rules in full — see `../_shared/requirements-immutability.md`.
 
 ## Steps
 
-1. Update `docs/.active_ticket` with the value `TICKET_ID`.
-2. If the file `docs/prd/TICKET_ID.prd.md` does not exist, create it from the template `@docs/prd.template.md`.
-3. Transfer `$ARGUMENTS` to the "Context / Idea" section.
-4. If a second argument (description file path) is provided, read the file and incorporate its content into the PRD as additional context in the "Context / Idea" section. **Copy all technical specifications exactly as written.**
-5. Create the following sections: goals, user stories, scenarios, metrics, constraints, risks, open questions.
-6. Fill in what can be derived from the repository context and the description file (if provided).
-7. **Verify**: All specifications from the description file are present in the PRD without modification.
-8. If there is insufficient data, formulate questions for the team and set `Status: DRAFT`.
-9. If the PRD looks complete and without blocking questions, set `Status: PRD_READY`.
+1. Set `docs/.active_ticket` to `TICKET_ID`.
+2. If `docs/prd/TICKET_ID.prd.md` does not exist, create it using the layout in `../_shared/output-templates/prd.md`. If a project-local `docs/prd.template.md` exists, prefer it as the layout source.
+3. Paste `$ARGUMENTS` into the PRD's "Context / Idea" section.
+4. If `DESCRIPTION_FILE` is present and exists, read it and incorporate its content into "Context / Idea". **Copy all technical specifications exactly as written.**
+5. Fill the standard sections (goals, user stories, scenarios, metrics, constraints, risks, open questions) from the description file and repository context.
+6. **Verify**: every specification from the description file appears in the PRD without modification.
+7. If anything is missing, formulate "Open Questions" for the user and set `Status: DRAFT`.
+8. Otherwise set `Status: PRD_READY` (see `../_shared/status-markers.md`).
